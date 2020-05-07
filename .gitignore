@@ -1,0 +1,13 @@
+__pycache__
+.idea
+PatchPerPix.egg-info
+snapshots
+*.pyc
+*.hdf
+*.out
+*.meta
+*.index
+*.data
+*.json
+*.npy
+tmp

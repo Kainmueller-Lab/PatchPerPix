@@ -1,0 +1,6 @@
+zarr
+scikit-image
+pycuda
+python-louvain
+toolz
+tifffile
