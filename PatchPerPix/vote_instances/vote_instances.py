@@ -524,6 +524,7 @@ def do_all(
         logger.info("numinst_ shape: %s", numinst_prob.shape)
 
     fn = os.path.splitext(os.path.basename(aff_file))[0]
+    res_key = kwargs.get('res_key', 'vote_instances')
     if kwargs['debug']:
         instances, foreground, debug, debug2 = to_instance_seg(
             affinities,
@@ -533,7 +534,7 @@ def do_all(
         )
         foreground = foreground.astype(np.uint8)
         results = [instances, foreground, debug, debug2]
-        result_names = ['vote_instances', 'vote_foreground',
+        result_names = [res_key, 'vote_foreground',
                         'vote_debug', 'vote_debug2']
     else:
         instances, foreground = to_instance_seg(
@@ -547,7 +548,7 @@ def do_all(
             return
         foreground = foreground.astype(np.uint8)
         results = [instances, foreground]
-        result_names = ['vote_instances', 'vote_foreground']
+        result_names = [res_key, 'vote_foreground']
 
     with h5py.File(os.path.join(kwargs['result_folder'],
                                 fn + ".hdf"), 'w') as f2:
