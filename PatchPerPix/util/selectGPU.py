@@ -20,14 +20,20 @@ def selectGPU(quantity=1):
         if "Processes" in n:
             n = lns[idx+1]
             if "GPU" in n and "PID" in n:
-                for idx in range(idx+3, len(lns)):
+                gid_slot = n.split().index("GPU")
+                start_found = False
+                for idx in range(idx+2, len(lns)):
+                    if"|==========" in lns[idx]:
+                        start_found = True
+                        continue
+                    if not start_found:
+                        continue
                     if "+----------" in lns[idx]:
                         break
-                    ln = lns[idx]
-                    pid = ln.split()[1]
-                    if pid == "No":
+                    gid = lns[idx].split()[gid_slot]
+                    if gid == "No":
                         break
-                    gpuInUse.append(int(pid))
+                    gpuInUse.append(int(gid))
 
     # find free GPU
     selectedGPU = []
