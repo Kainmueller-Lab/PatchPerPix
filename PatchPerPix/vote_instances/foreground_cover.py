@@ -14,23 +14,23 @@ logger = logging.getLogger(__name__)
 
 def computeForegroundCover(
     overlap_mask,
-    foreground_to_cover,
+    mask_to_cover,
     patchshape,
     ranked_patches_list,
     radslice,
-    labels,
+    pred_affs,
     rad,
     debug_output1,
     scores_array,
     silent=False,
     **kwargs
 ):
-    oneworm_foreground_running = foreground_to_cover.copy()
+    mask_to_cover_running = mask_to_cover.copy()
 
-    selected_centers = 0 * oneworm_foreground_running
+    selected_centers = 0 * mask_to_cover_running
     rpidx = 0
     selected = np.zeros(len(ranked_patches_list), dtype=np.bool)
-    marked = np.zeros_like(oneworm_foreground_running, dtype=np.bool)
+    marked = np.zeros_like(mask_to_cover_running, dtype=np.bool)
 
     if kwargs['select_patches_for_sparse_data']:
         pixThs = [0]
@@ -39,18 +39,18 @@ def computeForegroundCover(
     for pixTh in pixThs:
         if not silent:
             logger.info("compute foreground cover, threshold %s", pixTh)
-        computeForegroundCoverLoop(oneworm_foreground_running, radslice,
-                                   ranked_patches_list, overlap_mask, labels,
+        computeForegroundCoverLoop(mask_to_cover_running, radslice,
+                                   ranked_patches_list, overlap_mask, pred_affs,
                                    rad, selected, selected_centers,
                                    debug_output1, rpidx, patchshape, pixTh,
                                    silent=silent,
                                    marked=marked,
                                    **kwargs)
-        if np.sum(oneworm_foreground_running[radslice]) < 1:
+        if np.sum(mask_to_cover_running[radslice]) < 1:
             break
 
     if kwargs.get('select_patches_overlap_neighborhood', False):
-        selected_patches = np.zeros_like(foreground_to_cover)
+        selected_patches = np.zeros_like(mask_to_cover)
         selected_patches_list = [rp for rpi, rp in enumerate(ranked_patches_list)
                                  if selected[rpi]]
         for rp in selected_patches_list:
@@ -62,14 +62,14 @@ def computeForegroundCover(
                                                     iterations=5)
         overlap_not = np.logical_not(overlap_t)
         dil_mask = np.logical_and(overlap_not, overlap_dil)
-        fg_dil_mask = np.logical_and(dil_mask, foreground_to_cover)
+        fg_dil_mask = np.logical_and(dil_mask, mask_to_cover)
 
         rp_list = [rp for rp in ranked_patches_list
                    if not selected_patches[tuple(rp[0])] and
                    fg_dil_mask[tuple(rp[0])]]
         selected_overlap = np.zeros(len(rp_list), dtype=np.bool)
         computeForegroundCoverLoop(fg_dil_mask, radslice,
-                                   rp_list, overlap_mask, labels,
+                                   rp_list, overlap_mask, pred_affs,
                                    rad, selected_overlap, selected_centers,
                                    debug_output1, rpidx, patchshape, pixTh,
                                    silent=silent,
@@ -87,7 +87,7 @@ def computeForegroundCover(
                                  if selected[rpi]]
 
     if kwargs.get('store_selected_hdf', False):
-        selected_patches = np.zeros_like(foreground_to_cover)
+        selected_patches = np.zeros_like(mask_to_cover)
         for t in selected_patches_list:
             selected_patches[tuple([int(round(f)) for f in t[0]])] = 1
             with h5py.File("selected.hdf", 'w') as f:
@@ -102,17 +102,17 @@ def computeForegroundCover(
                     "worst score: %s at idx %s, uncovered: %s",
                     num_selected, selected_patches_list[0][1],
                     selected_patches_list[-1][1], rpidx,
-                    np.sum(oneworm_foreground_running[radslice]))
+                    np.sum(mask_to_cover_running[radslice]))
 
     return selected_patches_list, num_selected
 
 
 def computeForegroundCoverLoop(
-    oneworm_foreground_running,
+    mask_to_cover_running,
     radslice,
     ranked_patches_list,
     overlap_mask,
-    labels,
+    pred_affs,
     rad,
     selected,
     selected_centers,
@@ -124,7 +124,7 @@ def computeForegroundCoverLoop(
     marked=None,
     **kwargs
 ):
-    while (np.max(oneworm_foreground_running[radslice]) > 0 and
+    while (np.max(mask_to_cover_running[radslice]) > 0 and
            rpidx < len(ranked_patches_list)):
         rpidx += 1
         r = rpidx - 1
@@ -143,17 +143,17 @@ def computeForegroundCoverLoop(
         if overlap_mask[tuple(idx)] > 0:
             continue
 
-        labelslice = tuple([slice(0, labels.shape[0])] +
+        affslice = tuple([slice(0, pred_affs.shape[0])] +
                            [idx[i] for i in range(len(idx))])
 
-        patch = labels[labelslice]
+        patch = pred_affs[affslice]
         patch = np.reshape(patch, patchshape)
         start = idx - rad
         stop = idx + rad + 1
         startstopslice = tuple([slice(start[i], stop[i])
                                 for i in range(len(start))])
         if np.count_nonzero(
-            oneworm_foreground_running[startstopslice]
+            mask_to_cover_running[startstopslice]
             [patch > kwargs['fc_threshold']]) > pixTh:
             selected[r] = True
             selected_centers[tuple(idx)] = 1
@@ -166,7 +166,7 @@ def computeForegroundCoverLoop(
                                      for i in range(len(m_start))])
                 marked[m_startstopslice] = True
             # heads up: using 0.5 here to make covering easier
-            oneworm_foreground_running[startstopslice][
+            mask_to_cover_running[startstopslice][
                 patch > kwargs['fc_threshold']] = 0
         if kwargs['debug']:
             debugstart = idx * patchshape
@@ -176,22 +176,22 @@ def computeForegroundCoverLoop(
             debug_output1[debugslice] += 1
         if rpidx % 10000 == 0 and not silent:
             logger.info("compute foreground cover: %s pixels left to cover",
-                        np.sum(oneworm_foreground_running[radslice]))
+                        np.sum(mask_to_cover_running[radslice]))
 
 
 def thinOutForegroundCover(
-    foreground_to_cover,
+    mask_to_cover,
     selected_patches_list,
     radslice,
-    labels,
+    pred_affs,
     rad,
     patchshape,
     **kwargs
 ):
-    oneworm_foreground_running = foreground_to_cover.copy()
+    mask_to_cover_running = mask_to_cover.copy()
     selected = np.zeros(len(selected_patches_list), dtype=np.bool)
-    selected_patch_foregrounds = [get_foreground_set(rp[0], labels,
-                                                     foreground_to_cover,
+    selected_patch_foregrounds = [get_foreground_set(rp[0], pred_affs,
+                                                     mask_to_cover,
                                                      patchshape, rad,
                                                      kwargs['fc_threshold'],
                                                      sample=kwargs['sample'])
@@ -201,18 +201,18 @@ def thinOutForegroundCover(
         tree = scipy.spatial.cKDTree([rp[0] for rp in selected_patches_list],
                                      leafsize=4)
 
-    count_to_cover = np.sum(oneworm_foreground_running[radslice])
+    count_to_cover = np.sum(mask_to_cover_running[radslice])
     count_covered = 0
-    while np.max(oneworm_foreground_running[radslice]) > 0:
+    while np.max(mask_to_cover_running[radslice]) > 0:
         selected_patch_foreground_covers = [len(s)
                                             for s in selected_patch_foregrounds]
         best_patch_i = np.argmax(selected_patch_foreground_covers)
         selected[best_patch_i] = True
         best_fg = get_foreground_set(selected_patches_list[best_patch_i][0],
-                                     labels, oneworm_foreground_running,
+                                     pred_affs, mask_to_cover_running,
                                      patchshape, rad, kwargs['fc_threshold'],
                                      sample=kwargs['sample'])
-        oneworm_foreground_running[tuple(zip(*list(best_fg)))] = 0
+        mask_to_cover_running[tuple(zip(*list(best_fg)))] = 0
         count_covered += len(best_fg)
         count_to_cover -= len(best_fg)
         if kwargs.get('thin_cover_use_kd', False):
@@ -240,10 +240,10 @@ def thinOutForegroundCover(
             "worst score: {} uncovered: {}".format(
                 num_selected, selected_patches_list[0][1],
                 selected_patches_list[-1][1],
-                np.sum(oneworm_foreground_running[radslice])))
+                np.sum(mask_to_cover_running[radslice])))
 
     if kwargs.get('store_selected_hdf', False):
-        selected_patches = np.zeros_like(foreground_to_cover)
+        selected_patches = np.zeros_like(mask_to_cover)
         for rp in selected_patches_list:
             selected_patches[tuple(rp[0])] = 1
         with h5py.File("selected2.hdf", 'w') as f:

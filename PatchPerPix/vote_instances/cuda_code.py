@@ -47,6 +47,13 @@ def init_cuda():
     # atexit.register(_finish_up)
     return context
 
+def delete_cuda(context):
+    context.pop()
+    context = None
+
+    from pycuda.tools import clear_context_caches
+    clear_context_caches()
+
 def get_cuda_stream():
     import pycuda.driver as cuda
     return cuda.Stream()

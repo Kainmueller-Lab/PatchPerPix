@@ -83,7 +83,6 @@ def get_arguments(check_required=True):
     parser.add_argument('--fc_threshold', type=float, default=0.5)
     parser.add_argument('-p', '--patchshape', type=int,
                         action='append', required=check_required)
-    parser.add_argument('--sampling', type=float, default=1.0)
 
     # intermediate results: consensus, scores, ranked_patches, ...
     parser.add_argument('--consensus', type=str,
@@ -94,8 +93,8 @@ def get_arguments(check_required=True):
                         help='path to scores array')
     parser.add_argument('--ranked_patches', type=str,
                         help='path to ranked_patches')
-    parser.add_argument('--scores_key', type=str, help='hdf key',
-                        required=False, default="images/scores")
+    # parser.add_argument('--scores_key', type=str, help='hdf key',
+    #                     required=False, default="images/scores")
     parser.add_argument('--aff_graph', type=str, help='path to affgraph',
                         required=False)
     parser.add_argument('--selected_patches', type=str,
@@ -149,112 +148,88 @@ def get_arguments(check_required=True):
 
 
 def to_instance_seg(
-        labels,
-        numinst_prob,
+        pred_affs,
+        foreground,
+        mask_to_cover,
+        numinst,
         patchshape,
         **kwargs
 ):
+    logger.info("pred_affs shape: %s", pred_affs.shape)
+    logger.info("numinst shape: %s", numinst.shape)
+    logger.info("foreground shape: %s", foreground.shape)
+    logger.info("mask shape: %s", mask_to_cover.shape)
+
     rad = np.array([p // 2 for p in patchshape])
     mid = int(np.prod(patchshape) / 2)
-
-    mask = kwargs.get('mask', None)
 
     if kwargs.get("pad_with_ps", False):
         assert not kwargs['blockwise'], "can only pad whole volumes"
 
-        # todo: numinst_prob and mask should be padded too
-        logger.info("label shape before padding %s", labels.shape)
-        labels = np.pad(labels,
+        pred_affs = np.pad(pred_affs,
                         ((0, 0),
                          (rad[0], rad[0]),
                          (rad[1], rad[1]),
                          (rad[2], rad[2])),
                         mode='constant')
-        if type(numinst_prob) == np.ndarray:
-            numinst_prob = np.pad(numinst_prob,
-                            ((0, 0),
-                             (rad[0], rad[0]),
-                             (rad[1], rad[1]),
-                             (rad[2], rad[2])),
-                            mode='constant')
-        if mask is not None:
-            mask = np.pad(mask,
-                          ((rad[0], rad[0]),
-                           (rad[1], rad[1]),
-                           (rad[2], rad[2])),
-                          mode='constant')
+        foreground = np.pad(foreground,
+                               ((rad[0], rad[0]),
+                                (rad[1], rad[1]),
+                                (rad[2], rad[2])),
+                               mode='constant')
+        mask_to_cover = np.pad(mask_to_cover,
+                               ((rad[0], rad[0]),
+                                (rad[1], rad[1]),
+                                (rad[2], rad[2])),
+                               mode='constant')
+        numinst = np.pad(numinst,
+                         ((rad[0], rad[0]),
+                          (rad[1], rad[1]),
+                          (rad[2], rad[2])),
+                         mode='constant')
+        logger.info("shape after padding %s", pred_affs.shape)
+
 
     if kwargs['cuda']:
-        if labels.dtype != np.float32:
-            labels = labels.astype(np.float32)
-        tmp = alloc_zero_array(labels.shape, np.float32)
+        if pred_affs.dtype != np.float32:
+            pred_affs = pred_affs.astype(np.float32)
+        tmp = alloc_zero_array(pred_affs.shape, np.float32)
         # tmp = pycuda.driver.managed_zeros_like(
-        #     labels, mem_flags=pycuda.driver.mem_attach_flags.GLOBAL)
-        tmp[:] = labels
-        labels = tmp
+        #     pred_affs, mem_flags=pycuda.driver.mem_attach_flags.GLOBAL)
+        tmp[:] = pred_affs
+        pred_affs = tmp
 
     if not kwargs['debug']:
         debug_output1 = None
         debug_output2 = None
 
-    foreground_prob = 1 * (labels[mid])
-    radslice = tuple([slice(rad[i], foreground_prob.shape[i] - rad[i])
+    radslice = tuple([slice(rad[i], foreground.shape[i] - rad[i])
                       for i in range(len(rad))])
-    if kwargs['mask_fg_border']:
-        foreground = np.zeros(foreground_prob.shape, dtype=np.bool)
-        foreground[radslice] = (foreground_prob > kwargs['patch_threshold'])[
-            radslice]
-    else:
-        foreground = (foreground_prob > kwargs['patch_threshold'])
     logger.info("input image shape: {}".format(foreground.shape))
-    logger.info("Number fg pixel: {}".format(np.sum(foreground)))
+    logger.info("Number fg pixel: {}".format(np.count_nonzero(foreground)))
 
-    if type(numinst_prob) == np.ndarray:
-        if len(numinst_prob.shape) == 5:
-            numinst_prob = np.squeeze(numinst_prob)
-
-        numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
-        overlap_mask = 1 * (numinst > 1)
-        #overlap_mask = numinst_prob[2] > 0.2
-        # overlap_mask = 1 * (numinst_prob[2] > 0.2)
-        # overlap_mask = binary_dilation(overlap_mask, selem=disk(3))
-    else:
-        overlap_mask = 0 * foreground
+    overlap_mask = 1 * (numinst > 1)
     logger.info("overlap mask: %s %s", overlap_mask.shape,
-                np.sum(overlap_mask))
+                np.count_nonzero(overlap_mask))
 
     # isbi2012: hack for one-slice:
     if kwargs['isbiHack'] and (foreground.shape[0] > 1):
         foreground[0] = 0
         foreground[2:] = 0
 
-    if mask is not None:
-        logger.info("got mask")
-        if type(mask) == np.ndarray:
-            #mask = np.squeeze(mask)
-            #mask = np.squeeze(kwargs.get('mask'))
-            assert mask.shape == foreground.shape, \
-                "Loaded mask and foreground do not have the same shape. " \
-                "Please check!"
-            foreground_to_cover = mask.copy()
-    else:
-        logger.info("copy fg to fg2cover")
-        foreground_to_cover = foreground.copy()
-
     if kwargs.get('blockwise', False) == False:
         if kwargs.get('skeletonize_foreground'):
-            foreground_to_cover = skeletonize_3d(foreground_to_cover) > 0
+            mask_to_cover = skeletonize_3d(mask_to_cover) > 0
             logger.info("Number fg pixel after skeletonization: {}".format(
-                np.sum(foreground_to_cover)))
+                np.count_nonzero(mask_to_cover)))
 
-    if kwargs.get('consensus_without_overlap', False):
-        foreground_to_cover[overlap_mask > 0] = 0
-    logger.info("Number overlapping pixel: %s", np.sum(overlap_mask))
-    logger.info("Number pixel fg_to_cover: %s", np.sum(foreground_to_cover))
+    mask_to_cover[overlap_mask > 0] = 0
+    logger.info("Number overlapping pixel: %s", np.count_nonzero(overlap_mask))
+    logger.info("Number pixel mask_to_cover: %s", np.count_nonzero(mask_to_cover))
 
     instances = (0 * foreground).astype(np.uint16)
 
-    if np.sum(foreground_to_cover[radslice]) == 0:
+    if np.count_nonzero(mask_to_cover[radslice]) == 0:
         logger.info("no fg found, returning...")
         if kwargs.get('return_intermediates', False):
             return None, None
@@ -279,9 +254,9 @@ def to_instance_seg(
         kwargs['selected_patch_pairs'] = os.path.join(
             kwargs['result_folder'],
             fn + "_selected_patch_pairs.npy")
-        return affGraphToInstancesT(labels, patchshape, rad,
+        return affGraphToInstancesT(pred_affs, patchshape, rad,
                                     debug_output1, debug_output2,
-                                    instances, foreground_to_cover,
+                                    instances, foreground,
                                     **kwargs)
 
     if kwargs['debug']:
@@ -292,8 +267,8 @@ def to_instance_seg(
 
     all_patches = np.transpose(np.where(foreground))
     logger.info("num foreground pixels: %s", len(all_patches))
-
-    logger.info("num foreground pixels %s", np.sum(foreground[radslice]))
+    logger.info("num foreground pixels: %s (without border)",
+                np.count_nonzero(foreground[radslice]))
 
     if not kwargs['cuda'] and not kwargs['skipLookup']:
         lookup = fillLookup(foreground, patchshape, neighshape, all_patches)
@@ -322,8 +297,8 @@ def to_instance_seg(
     if not kwargs['skipConsensus']:
         consensus_vote_array, offsets_bases_ff, offsets_bases_fb = \
             loadOrComputeConsensus(instances, patchshape,
-                                   neighshape, all_patches, labels, rad,
-                                   foreground_to_cover, lookup,
+                                   neighshape, all_patches, pred_affs, rad,
+                                   foreground, lookup,
                                    overlap_mask, **kwargs)
     else:
         consensus_vote_array = None
@@ -341,7 +316,7 @@ def to_instance_seg(
     if not kwargs['skipRanking']:
         ranked_patches_list, scores_array = \
             loadOrComputePatchRanking(
-                labels=labels,
+                pred_affs=pred_affs,
                 consensus_vote_array=consensus_vote_array,
                 offsets_bases_ff=offsets_bases_ff,
                 offsets_bases_fb=offsets_bases_fb,
@@ -349,6 +324,7 @@ def to_instance_seg(
                 all_patches=all_patches,
                 patchshape=patchshape,
                 neighshape=neighshape,
+                rad=rad,
                 **kwargs,
             )
         logger.info("num ranked patches %s ", len(ranked_patches_list))
@@ -364,10 +340,10 @@ def to_instance_seg(
             stop = idx + rad + 1
             if np.any(start < 0) or np.any(stop > foreground.shape):
                 continue
-            labelslice = tuple([slice(0, labels.shape[0])] +
+            affslice = tuple([slice(0, pred_affs.shape[0])] +
                                [idx[i] for i in range(len(idx))])
 
-            patch = labels[labelslice]
+            patch = pred_affs[affslice]
             patch = np.reshape(patch, patchshape)
             debugstart = np.array(idx) * patchshape
             debugstop = debugstart + patchshape
@@ -377,9 +353,9 @@ def to_instance_seg(
 
     # isbi2012: patch-based foreground excluding boundaries:
     if kwargs['isbiHack'] and (foreground.shape[0] > 1):
-        foreground_to_cover = filterInstanceBoundariesFromFG(
-            labels, foreground, all_patches,
-            patchshape, rad, foreground_to_cover, **kwargs)
+        mask_to_cover = filterInstanceBoundariesFromFG(
+            pred_affs, foreground, all_patches,
+            patchshape, rad, mask_to_cover, **kwargs)
 
     if kwargs.get('aff_graph') is None:
         if kwargs.get('selected_patches') is not None:
@@ -397,19 +373,19 @@ def to_instance_seg(
             logger.info("compute foreground cover")
             selected_patches_list, num_selected = \
                 computeForegroundCover(
-                    overlap_mask, foreground_to_cover,
+                    overlap_mask, mask_to_cover,
                     patchshape, ranked_patches_list,
                     radslice,
-                    labels, rad, debug_output1, scores_array, **kwargs)
+                    pred_affs, rad, debug_output1, scores_array, **kwargs)
             logger.info("done compute foreground cover")
 
         # (4) thin out selection with greedy set cover algorithm:
-        if not kwargs['skipThinCover']:
+        if not kwargs['skipThinCover'] and num_selected > 0:
             logger.info("compute thin out foreground cover")
             selected_patches_list, num_selected = \
-                thinOutForegroundCover(foreground_to_cover,
+                thinOutForegroundCover(mask_to_cover,
                                        selected_patches_list,
-                                       radslice, labels,
+                                       radslice, pred_affs,
                                        rad, patchshape, **kwargs)
             logger.info("done thin out foreground cover")
 
@@ -441,7 +417,7 @@ def to_instance_seg(
                 selected_patches_list,
                 num_selected,
                 selected_patch_pairsIDs,
-                labels, foreground_to_cover,
+                pred_affs, mask_to_cover,
                 patchshape, neighshape,
                 rad, overlap_mask, lookup,
                 consensus_vote_array, **kwargs
@@ -463,35 +439,35 @@ def to_instance_seg(
         )
 
     # (6) label pixels according to graph connected components
-    return affGraphToInstances(affinity_graph, labels, patchshape, rad,
+    return affGraphToInstances(affinity_graph, pred_affs, patchshape, rad,
                                debug_output1, debug_output2,
-                               instances, foreground_to_cover, **kwargs)
+                               instances, foreground, **kwargs)
 
 
 def do_block(
-    block,
-    numinst,
-    mask,
-    **kwargs
+        block,
+        foreground,
+        mask,
+        numinst,
+        **kwargs
 ):
     patchshape = kwargs['patchshape']
     del kwargs['patchshape']
     if type(patchshape) != np.ndarray:
         patchshape = np.array(patchshape)
 
+    res = to_instance_seg(
+        block,
+        foreground,
+        mask,
+        numinst,
+        patchshape,
+        **kwargs
+    )
     if kwargs.get('return_intermediates'):
-        return to_instance_seg(
-            block,
-            numinst,
-            patchshape,
-            mask=mask,
-            **kwargs
-        )
+        return res
     else:
-        instances, _ = to_instance_seg(
-            block, numinst, patchshape,
-            mask=mask, **kwargs
-        )
+        instances, _ = res
         rad = np.array([p // 2 for p in patchshape])
         slices = [slice(r, d - r) for r, d in zip(rad, instances.shape)]
         instances = instances[slices]
@@ -504,7 +480,8 @@ def do_all(
         patchshape=np.array([1, 25, 25]),
         **kwargs
 ):
-    logger.info("processing %s", aff_file)
+    logger.info("processing %s into %s",
+                aff_file, kwargs['result_folder'])
 
     if type(patchshape) is not np.ndarray:
         patchshape = np.array(patchshape)
@@ -515,41 +492,46 @@ def do_all(
     else:
         res_ext = ''
 
-    affinities, numinst_prob, mask = loadAffinities(aff_file, res_ext,
-                                              patchshape=patchshape, **kwargs)
-    logger.info("affinities shape: %s", affinities.shape)
-    if numinst_prob is None:
-        numinst_prob = 0
-    else:
-        logger.info("numinst_ shape: %s", numinst_prob.shape)
+    affinities, numinst, foreground = \
+        loadAffinities(aff_file, res_ext,
+                       patchshape=patchshape,
+                       **kwargs)
+    mask = np.copy(foreground)
+    if numinst is None:
+        numinst = np.copy(foreground)
 
-    fn = os.path.splitext(os.path.basename(aff_file))[0]
+    kwargs['aff_file'] = aff_file
+    res = to_instance_seg(
+        affinities,
+        foreground,
+        mask,
+        numinst,
+        patchshape,
+        **kwargs
+    )
     res_key = kwargs.get('res_key', 'vote_instances')
     if kwargs['debug']:
-        instances, foreground, debug, debug2 = to_instance_seg(
-            affinities,
-            numinst_prob,
-            patchshape,
-            **kwargs
-        )
+        instances, foreground, debug, debug2 = res
         foreground = foreground.astype(np.uint8)
         results = [instances, foreground, debug, debug2]
         result_names = [res_key, 'vote_foreground',
                         'vote_debug', 'vote_debug2']
     else:
-        instances, foreground = to_instance_seg(
-            affinities,
-            numinst_prob,
-            patchshape,
-            mask=mask,
-            **kwargs
-        )
+        instances, foreground = res
         if instances is None and foreground is None:
             return
         foreground = foreground.astype(np.uint8)
         results = [instances, foreground]
         result_names = [res_key, 'vote_foreground']
 
+    if kwargs.get('crop_to_foreground', False):
+        if kwargs.get('one_instance_per_channel', False):
+            for i in range(instances.shape[0]):
+                instances[i][foreground == 0] = 0
+        else:
+            instances[foreground == 0] = 0
+
+    fn = os.path.splitext(os.path.basename(aff_file))[0]
     with h5py.File(os.path.join(kwargs['result_folder'],
                                 fn + ".hdf"), 'w') as f2:
         for i, dataset_basename in enumerate(result_names):
@@ -610,6 +592,8 @@ def main(**kwargs):
     else:
         for fl in aff_files:
             do_all(fl, **args)
+
+    delete_cuda(args['context'])
 
 
 if __name__ == "__main__":

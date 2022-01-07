@@ -32,13 +32,19 @@ def decoder_model_fn(features, labels, mode, params):
     logger.info("feature tensor: %s", features)
     logger.info("label tensor: %s", labels)
     # read original autoencoder config
-    autoencoder_config = toml.load(params['config'])
+    config = toml.load(params['config'])
+    if 'autoencoder' in config:
+        autoencoder_config = config['autoencoder']
+        ps = autoencoder_config['patchshape']
+    else:
+        autoencoder_config = config
+        ps = autoencoder_config['model']['patchshape']
 
     is_training = False
     code = tf.reshape(features, (-1,) + params['input_shape'])
     dummy_in = tf.placeholder(
-        tf.float32, [None, ] + autoencoder_config['model']['patchshape'])
-    input_shape = tuple(p for p in autoencoder_config['model']['patchshape']
+        tf.float32, [None, ] + ps)
+    input_shape = tuple(p for p in ps
                         if p > 1)
     logits, _, _ = autoencoder(
         code,
@@ -46,7 +52,7 @@ def decoder_model_fn(features, labels, mode, params):
         input_shape_squeezed=input_shape,
         only_decode=True,
         dummy_in=dummy_in,
-        **autoencoder_config['model']
+        **autoencoder_config
     )
     pred_affs = tf.sigmoid(logits, name="affinities")
 
@@ -72,7 +78,7 @@ def decode_sample(code, mask, checkpoint, config_file, output_folder,
     sess_config = tf.ConfigProto()
     sess_config.gpu_options.allow_growth = True
     config = tf.estimator.RunConfig(
-        model_dir=output_folder,
+        # model_dir=output_folder,
         session_config=sess_config)
 
     # init tf estimator and fast predict

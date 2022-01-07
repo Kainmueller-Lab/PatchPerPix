@@ -9,6 +9,7 @@ import h5py
 import sys
 import logging
 import time
+from datetime import datetime
 
 
 from multiprocessing import Process, Lock, Pool
@@ -22,11 +23,13 @@ if __package__ is None or __package__ == '':
     from PatchPerPix.util import remove_small_components, relabel, color
     from io_hdflike import IoZarr
     from vote_instances import affGraphToInstances
+    from utilVoteInstances import loadFg, returnFg
 else:
     from .vote_instances import do_block
     from ..util import zarr2hdf, remove_small_components, relabel, color
     from .io_hdflike import IoZarr
     from .graph_to_labeling import affGraphToInstances
+    from .utilVoteInstances import loadFg, returnFg
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +138,15 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
         import pycuda.compiler
         from pycuda.autoinit import context
         kwargs['context'] = context
-    io_in = IoZarr(pred_file, pred_keys, channel_order=channel_order)
+    io_in = IoZarr(pred_file, pred_keys,
+                   channel_order=channel_order)
 
     block_offsets = get_offsets(bb_shape, chunksize)
     block_offsets = [off + bb_offset for off in block_offsets]
 
     # iterate through blocks
     for block_id, offset in enumerate(block_offsets):
+        t0 = datetime.now()
         # load block and add coordinate
         block_key = in_key + '/' + get_offset_str(offset)
         if block_key + '/patch_pairs' not in zf:
@@ -156,8 +161,8 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
         patch_pairs = np.array(zf[block_key + '/patch_pairs'])
         aff_graph_mat = np.array(zf[block_key + '/aff_graph_mat'])
         patch_pairs = patch_pairs + np.array(list(offset) * 2)
-        logger.info("min / max aff graph mat block: %s %s", np.min(aff_graph_mat), np.max(
-            aff_graph_mat))
+        logger.info("min / max aff graph mat block: %s %s (offset %s)",
+                    np.min(aff_graph_mat), np.max(aff_graph_mat), offset)
 
         # get unique list of selected patches
         num_patches, dim_points = patch_pairs.shape
@@ -183,9 +188,19 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
             # call vote instances for adjacent region
             for neighbor in neighborhood:
                 neighbor_offset = offset + neighbor * chunksize
+
                 # check all already processed blocks
                 for neighbor_id in range(0, block_id):
                     if np.all(block_offsets[neighbor_id] == neighbor_offset):
+                        inter_block_key = in_key + '/' + get_offset_str(offset) + "/" + get_offset_str(neighbor_offset)
+                        if inter_block_key in zf:
+                            patch_pairs = np.array(
+                                zf[inter_block_key + '/patch_pairs'])
+                            aff_graph_mat = np.array(
+                                zf[inter_block_key + '/aff_graph_mat'])
+                            affgraph = update_graph(affgraph, aff_graph_mat, patch_pairs)
+                            continue
+
                         logger.debug("neighbor: {}, {}, {}".format(
                             neighbor, offset, neighbor_offset))
                         if global_patches[neighbor_id] is None:
@@ -250,7 +265,9 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                         bb_stop = np.minimum(
                             np.max(candidates_cleaned, axis=0) + patchshape,
                             output_shape)
-                        logger.debug('overlapping bb: {}, {}'.format(
+                        logger.info("%s %s", np.min(candidates_cleaned, axis=0),
+                                    np.max(candidates_cleaned, axis=0))
+                        logger.info('overlapping bb: {}, {}'.format(
                             bb_start, bb_stop))
 
                         # load neighboring region as input
@@ -261,13 +278,29 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                             io_in, pred_keys[0], bb_start, margin, overlap,
                             bb_size, padding=False)
                         block = block.astype(np.float32)
-                        if kwargs['overlapping_inst']:
-                            numinst, _ = load_input(
-                                io_in, pred_keys[1], bb_start, margin, overlap,
-                                bb_size, padding=False)
-                            numinst = numinst.astype(np.float32)
+
+                        if kwargs.get("numinst_key") is not None:
+                            numinst_prob, _ = load_input(
+                                io_in, pred_keys[1], bb_start, margin,
+                                overlap, bb_size, padding=False)
+                            if len(numinst_prob.shape) == 3:
+                                numinst_prob = np.expand_dims(numinst_prob, axis=1)
+                            numinst = np.argmax(numinst_prob,
+                                                axis=0).astype(np.uint8)
                         else:
                             numinst = None
+                            numinst_prob = None
+                        if kwargs.get("fg_key") is not None:
+                            fg, _ = load_input(
+                                io_in, kwargs['fg_key'], bb_start, margin,
+                                overlap, bb_size, padding=False)
+                        else:
+                            fg = None
+                        foreground = returnFg(block, numinst_prob, fg, **kwargs)
+
+                        if numinst is None:
+                            numinst = np.copy(foreground)
+                        mask = np.copy(foreground)
 
                         # call vote instances, pass selected patches and
                         # patch pairs
@@ -283,7 +316,7 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                                                    dtype=np.uint32)
 
                         _, aff_graph_mat = do_block(
-                            block, numinst, None,
+                            block, foreground, mask, numinst,
                             selected_patches=candidates_relative,
                             selected_patch_pairs=pairs_relative,
                             **kwargs
@@ -296,18 +329,40 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                         # update global patch graph
                         affgraph = update_graph(affgraph, aff_graph_mat,
                                                 overlapping_pairs)
+                        # save patch pairs and patch affinities
+                        ds_name = inter_block_key + '/patch_pairs'
+                        zf.create_dataset(
+                            ds_name,
+                            data=overlapping_pairs,
+                            shape=overlapping_pairs.shape,
+                            compressor=compressor,
+                            dtype=np.uint32,
+                            overwrite=True,
+                        )
+                        zf[ds_name].attrs['block_shape'] = block.shape[1:]
+
+                        ds_name = inter_block_key + '/aff_graph_mat'
+                        zf.create_dataset(
+                            ds_name,
+                            data=aff_graph_mat,
+                            shape=aff_graph_mat.shape,
+                            compressor=compressor,
+                            dtype=np.float32,
+                            overwrite=True,
+                        )
+        logger.info('time %s: %s', "block-stitching", str(datetime.now() - t0))
 
     # partition patch affinity graph by connected components analysis
     in_f = zarr.open(pred_file, mode='r')
     # list with selected patches (complete patches, not only their id)
-    labels = {}
+    patches = {}
     rad = np.array([p // 2 for p in patchshape])
-    mid = int(np.prod(patchshape) / 2)
-    foreground_to_cover = np.array(in_f[pred_keys[0]][mid])
-    foreground_to_cover = foreground_to_cover >= kwargs['patch_threshold']
-    sz = np.prod(in_f[pred_keys[0]].shape)/1024/1024/1024
-    logger.info("%s", sz)
+    foreground, _ = loadFg(in_f, **kwargs)
+    foreground = np.squeeze(foreground)
+    sz = np.prod(in_f[pred_keys[0]].shape)/1024/1024/1024*2
+    logger.info("size in gb %s", sz)
     coords = list(affgraph.nodes)
+    logger.info("number nodes %d", len(coords))
     if sz < 20:
         pred_affs = np.array(in_f[pred_keys[0]])
     else:
@@ -317,21 +372,26 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug('min / max coords: {}, {}'.format(
             np.min(np.array(coords), axis=0), np.max(np.array(coords), axis=0)))
-    for coord in coords:
+    for idx, coord in enumerate(coords):
+        if idx % 500 == 0:
+            logger.info("read %d patches", idx)
         coord_key = get_offset_str(coord)
         z, y, x = coord
-        labels[coord_key] = np.array(pred_affs[:, z, y, x])
-    result, _ = affGraphToInstances(
-        affgraph, labels,
+        patches[coord_key] = np.array(pred_affs[:, z, y, x])
+    logger.info("all patches read, labelling..")
+    t0 = datetime.now()
+    result, foreground = affGraphToInstances(
+        affgraph, patches,
         rad=rad,
         debug_output1=False,
         debug_output2=False,
         instances=result,
-        foreground_to_cover=foreground_to_cover,
+        foreground=foreground,
         sparse_labels=True,
         **kwargs)
+    logger.info('time %s: %s', "affGraphToInstances", str(datetime.now() - t0))
 
-    return result
+    return result, foreground
 
 
 # this returns the offsets for the given output blocks.
@@ -422,8 +482,11 @@ def load_input(io, key, offset, context, overlap, output_shape, padding=True,
         del starts[0]
         del stops[0]
     if io.channel_order is not None:
-        bb = tuple([io.channel_order[io.keys.index(key)]]) + tuple(slice(
-            start, stop) for start, stop in zip(starts, stops))
+        try:
+            bb = tuple([io.channel_order[io.keys.index(key)]]) + tuple(slice(
+                start, stop) for start, stop in zip(starts, stops))
+        except:
+            bb = tuple(slice(start, stop) for start, stop in zip(starts, stops))
     else:
         bb = tuple(slice(start, stop) for start, stop in zip(starts, stops))
     data = io.read(bb, key)
@@ -496,7 +559,8 @@ def blockwise_vote_instances(
 
     # open result file
     # move io_in to main?
-    io_in = IoZarr(pred_file, pred_keys, channel_order=channel_order)
+    io_in = IoZarr(pred_file, pred_keys,
+                   channel_order=channel_order)
     if not os.path.exists(res_file):
         io_out = zarr.open(res_file, mode='w')
     else:
@@ -537,20 +601,37 @@ def blockwise_vote_instances(
         padding=False
     )
     block_shape = block.shape[1:]
+
     # load numinst
-    if kwargs['overlapping_inst']:
-        numinst, _ = load_input(
+    if kwargs.get("numinst_key") is not None:
+        numinst_prob, _ = load_input(
             io_in, pred_keys[1], in_offset, margin, overlap, chunksize,
             padding=False)
-        numinst = numinst.astype(np.float32)
+        if len(numinst_prob.shape) == 3:
+            numinst_prob = np.expand_dims(numinst_prob, axis=1)
+        numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
     else:
         numinst = None
+        numinst_prob = None
+    if kwargs.get("numinst_key") is None and kwargs.get("fg_key") is not None:
+        fg, _ = load_input(
+            io_in, kwargs['fg_key'], in_offset, margin, overlap, chunksize,
+            padding=False)
+    else:
+        fg = None
+    foreground = returnFg(block, numinst_prob, fg, **kwargs)
+
+    if numinst is None:
+        numinst = np.copy(foreground)
+    if mask is None:
+        mask = np.copy(foreground)
 
     # call vote instances
     patch_pairs, aff_graph_mat = do_block(
         block.astype(np.float32),
-        numinst,
+        foreground,
         mask,
+        numinst,
         **kwargs
     )
 
@@ -598,6 +679,7 @@ def main(pred_file, result_folder='.', **kwargs):
             renamed?)
 
             aff_key
+            numinst_key
             fg_key
             res_key
             overlapping_inst
@@ -615,6 +697,7 @@ def main(pred_file, result_folder='.', **kwargs):
             dilate_instances
 
     """
+    logger.info("processing %s into %s", pred_file, result_folder)
     assert os.path.exists(pred_file), \
         'Prediction file {} does not exist. Please check!'.format(pred_file)
 
@@ -627,6 +710,7 @@ def main(pred_file, result_folder='.', **kwargs):
     # dataset keys
     aff_key = kwargs['aff_key']
     fg_key = kwargs.get('fg_key')
+    numinst_key = kwargs.get('numinst_key')
     res_key = kwargs.get('res_key', 'vote_instances')
     cleaned_mask_key = 'volumes/foreground_cleaned'
     tmp_key = 'volumes/blocks'
@@ -638,12 +722,13 @@ def main(pred_file, result_folder='.', **kwargs):
         raise NotImplementedError
     aff_shape = in_f[aff_key].shape
     channel_order = [slice(0, aff_shape[0])]
-    pred_keys = [aff_key]
+    pred_keys = []
+    pred_keys.append(aff_key)
 
-    if kwargs['overlapping_inst']:
-        numinst_shape = in_f[fg_key].shape
+    if numinst_key is not None:
+        numinst_shape = in_f[numinst_key].shape
         channel_order.append(slice(0, numinst_shape[0]))
-        pred_keys += [fg_key]
+        pred_keys.append(numinst_key)
         assert aff_shape[1:] == numinst_shape[1:], \
             'Please check: affinity and numinst shape do not match!'
     input_shape = aff_shape[1:]     # without first channel dimension
@@ -652,14 +737,15 @@ def main(pred_file, result_folder='.', **kwargs):
     if kwargs.get('only_bb'):
         mid = np.prod(kwargs['patchshape']) // 2
         if cleaned_mask_key in in_f:
-            pred_keys += [cleaned_mask_key]
+            pred_keys.append(cleaned_mask_key)
             channel_order.append(slice(0, 1))
             shape = np.array(in_f[cleaned_mask_key].attrs['fg_shape'])
             bb_offset = np.array(in_f[cleaned_mask_key].attrs['offset'])
         else:
-            mask = np.array(in_f[aff_key][mid])
-            mask = mask > kwargs['patch_threshold']
-            if np.sum(mask) == 0:
+            mask, key = loadFg(in_f, **kwargs)
+            # pred_keys["mask"] = key
+            mask = np.squeeze(mask)
+            if np.count_nonzero(mask) == 0:
                 logger.info('Volume has no foreground voxel, returning...')
                 return
             # remove small components
@@ -700,6 +786,10 @@ def main(pred_file, result_folder='.', **kwargs):
     logger.info("input shape: {}, bb cropped shape: {}, offset: {}".format(
         input_shape, shape, bb_offset))
 
+    if numinst_key is None and kwargs.get("fg_key") is not None:
+        pred_keys.append(kwargs['fg_key'])
+        channel_order.append(slice(0, 1))
+
     # create offset lists
     offsets = get_offsets(shape, kwargs['chunksize'])
     # offsets = [offset + bb_offset for offset in offsets]
@@ -730,15 +820,18 @@ def main(pred_file, result_folder='.', **kwargs):
         for idx, offset in enumerate(offsets):
             logger.info("start block idx: %s/%s (file %s)",
                         idx, len(offsets), sample)
+            t0 = datetime.now()
             blockwise_vote_instances(pred_file, pred_keys, result_file, tmp_key,
                                      shape, channel_order, bb_offset, kwargs,
                                      offset)
+            logger.info('time %s: %s', "blockwise_vote_instances",
+                        str(datetime.now() - t0))
 
     # stitch blocks
     #child_pid = os.fork()
     #if child_pid == 0:
     # child process
-    instances = stitch_vote_instances(
+    instances, foreground = stitch_vote_instances(
         result_file, tmp_key, res_key, input_shape,
         bb_offset, shape, pred_file, pred_keys, channel_order, **kwargs
     )
@@ -776,6 +869,20 @@ def main(pred_file, result_folder='.', **kwargs):
             dtype=np.uint16,
             compression='gzip'
         )
+        hf.create_dataset(
+            "vote_foreground",
+            data=foreground.astype(np.uint16),
+            dtype=np.uint16,
+            compression='gzip'
+        )
+        tmp = np.copy(instances)
+        tmp[foreground == 0] = 0
+        hf.create_dataset(
+            "vote_instances_masked",
+            data=tmp.astype(np.uint16),
+            dtype=np.uint16,
+            compression='gzip'
+        )
         if kwargs.get("dilate_instances", False):
             logger.info("dilating")
             instdil = np.copy(instances)
@@ -789,6 +896,14 @@ def main(pred_file, result_folder='.', **kwargs):
             hf.create_dataset(
                 res_key + "_dil_1",
                 data=instdil.astype(np.uint16),
+                dtype=np.uint16,
+                compression='gzip'
+            )
+            tmp = np.copy(instdil)
+            tmp[foreground == 0] = 0
+            hf.create_dataset(
+                res_key + "_masked_dil_1",
+                data=tmp.astype(np.uint16),
                 dtype=np.uint16,
                 compression='gzip'
             )

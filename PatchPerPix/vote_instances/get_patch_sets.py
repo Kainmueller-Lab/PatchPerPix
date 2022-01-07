@@ -3,11 +3,11 @@ import random
 from skimage.morphology import binary_dilation, ball
 
 
-def get_boundary_set(idx, labels, foreground, patchshape, rad, pthresh):
-    labelslice = tuple([slice(0, labels.shape[0])] +
-                       [idx[i]
-                        for i in range(len(idx))])
-    patchprob = labels[labelslice]
+def get_boundary_set(idx, pred_affs, foreground, patchshape, rad, pthresh):
+    affslice = tuple([slice(0, pred_affs.shape[0])] +
+                     [idx[i]
+                      for i in range(len(idx))])
+    patchprob = pred_affs[affslice]
     patchprob = np.reshape(patchprob, patchshape)
 
     start = idx - rad
@@ -29,13 +29,13 @@ def get_boundary_set(idx, labels, foreground, patchshape, rad, pthresh):
     return pbd
 
 
-def get_foreground_set(idx, labels, foreground, patchshape, rad, pthresh,
+def get_foreground_set(idx, pred_affs, foreground, patchshape, rad, pthresh,
                        sample=1.0):
-    labelslice = tuple([slice(0, labels.shape[0])] +
-                       [idx[i]
-                        for i in range(len(idx))])
+    affslice = tuple([slice(0, pred_affs.shape[0])] +
+                     [idx[i]
+                      for i in range(len(idx))])
 
-    patchprob = labels[labelslice]
+    patchprob = pred_affs[affslice]
     patchprob = np.reshape(patchprob, patchshape)
 
     start = idx - rad
@@ -54,13 +54,13 @@ def get_foreground_set(idx, labels, foreground, patchshape, rad, pthresh,
     return pf
 
 
-def get_background_set(idx, labels, foreground, patchshape, rad, pthresh,
+def get_background_set(idx, pred_affs, foreground, patchshape, rad, pthresh,
                        sample=1.0):
-    labelslice = tuple([slice(0, labels.shape[0])] +
-                       [idx[i]
-                        for i in range(len(idx))])
+    affslice = tuple([slice(0, pred_affs.shape[0])] +
+                     [idx[i]
+                      for i in range(len(idx))])
 
-    patchprob = labels[labelslice]
+    patchprob = pred_affs[affslice]
     patchprob = np.reshape(patchprob, patchshape)
 
     start = idx - rad

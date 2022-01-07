@@ -68,21 +68,15 @@ def create_consensus_array(all_patches_fg, all_patches_bg,
     return consensus_vote_array, offsets_bases_ff, offsets_bases_fb
 
 
-def create_consensus_array_cuda(labels, foreground, overlap_mask,
+def create_consensus_array_cuda(pred_affs, overlap_mask,
                                 patchshape, neighshape,
                                 **kwargs):
-    # copy foreground mask to gpu
-    # mask = foreground.astype(np.bool)
-    # tmp_mask = alloc_zero_array(mask.shape, np.bool)
-    # tmp_mask[:] = mask
-    # mask = tmp_mask
-
     if kwargs.get("flip_cons_arr_axes", False):
         logger.info("flipping cuda array axes")
         cuda_fn = "cuda/fillConsensusArray6.cu"
     else:
         cuda_fn = "cuda/fillConsensusArray.cu"
-    code = loadKernelFromFile(cuda_fn, labels.shape,
+    code = loadKernelFromFile(cuda_fn, pred_affs.shape,
                               patchshape, neighshape,
                               kwargs['patch_threshold'])
 
@@ -95,9 +89,9 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
 
     kernels = make_kernel(code, options=build_options)
 
-    datazsize = labels.shape[1]
-    dataysize = labels.shape[2]
-    dataxsize = labels.shape[3]
+    datazsize = pred_affs.shape[1]
+    dataysize = pred_affs.shape[2]
+    dataxsize = pred_affs.shape[3]
     nsz = int(neighshape[0])
     nsy = int(neighshape[1])
     nsx = int(neighshape[2])
@@ -130,7 +124,7 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
     kernel = kernels.get_function("fillConsensusArray_allPatches")
     with kwargs['mutex']:
         logger.info("creating consensus array %s", kwargs.get('affinities'))
-        fargs = [labels]
+        fargs = [pred_affs]
         if kwargs.get('overlapping_inst'):
             fargs.append(overlap)
         fargs.append(outCons)
@@ -159,7 +153,7 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
         kernel = kernels.get_function("fillConsensusArray_allPatches")
         with kwargs['mutex']:
             logger.info("creating consensus array cnt %s", kwargs.get('affinities'))
-            fargs = [labels]
+            fargs = [pred_affs]
             if kwargs.get('overlapping_inst'):
                 fargs.append(overlap)
             fargs.append(outConsCnt)
@@ -179,7 +173,7 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
             cuda_fn = "cuda/normConsensusArray6.cu"
         else:
             cuda_fn = "cuda/normConsensusArray.cu"
-        code = loadKernelFromFile(cuda_fn, labels.shape,
+        code = loadKernelFromFile(cuda_fn, pred_affs.shape,
                                   patchshape, neighshape,
                                   kwargs['patch_threshold'])
 
@@ -187,7 +181,7 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
         kernel = kernels.get_function("normConsensusArray")
         with kwargs['mutex']:
             logger.info("normalizing consensus array %s", kwargs.get('affinities'))
-            kernel(labels, outCons, outConsCnt,
+            kernel(pred_affs, outCons, outConsCnt,
                    block=get_block_shape(datazsize, dataysize, dataxsize),
                    grid=get_grid_shape(datazsize, dataysize, dataxsize))
             sync(kwargs['context'])
@@ -213,7 +207,7 @@ def create_consensus_array_cuda(labels, foreground, overlap_mask,
 
 
 def loadOrComputeConsensus(instances, patchshape, neighshape,
-                           all_patches, labels, rad, foreground, lookup,
+                           all_patches, pred_affs, rad, foreground, lookup,
                            overlap_mask, **kwargs
                            ):
     path_to_consensus = kwargs.get('consensus', None)
@@ -224,7 +218,7 @@ def loadOrComputeConsensus(instances, patchshape, neighshape,
                          key=kwargs['consensus_key'])
     elif kwargs['cuda']:
         consensus_vote_array = create_consensus_array_cuda(
-            labels, foreground, overlap_mask, patchshape, neighshape,
+            pred_affs, overlap_mask, patchshape, neighshape,
             **kwargs)
         offsets_bases_ff = None
         offsets_bases_fb = None
@@ -232,7 +226,7 @@ def loadOrComputeConsensus(instances, patchshape, neighshape,
         all_patches_fgs, all_patches_bgs = computeFGBGsets(
             foreground,
             all_patches,
-            labels,
+            pred_affs,
             patchshape,
             rad,
             **kwargs

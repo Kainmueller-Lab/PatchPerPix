@@ -58,7 +58,7 @@ def fillLookup(foreground, patchshape, neighshape, all_patches):
 
 def computeFGBGsets(foreground,
                     all_patches,
-                    labels,
+                    pred_affs,
                     patchshape,
                     rad,
                     **kwargs):
@@ -66,25 +66,25 @@ def computeFGBGsets(foreground,
 
     # isbi2012 hack:
     if kwargs['isbiHack'] and shape[0] > 1:
-        all_patches_fgs = [get_foreground_set(p, labels,
+        all_patches_fgs = [get_foreground_set(p, pred_affs,
                                               np.ones(shape),
                                               patchshape, rad,
                                               kwargs['patch_threshold'],
                                               sample=kwargs['sample'])
                            for p in all_patches]
-        all_patches_bgs = [get_background_set(p, labels,
+        all_patches_bgs = [get_background_set(p, pred_affs,
                                               np.ones(shape),
                                               patchshape, rad,
                                               kwargs['patch_threshold'],
                                               sample=kwargs['sample'])
                            for p in all_patches]
     else:
-        all_patches_fgs = [get_foreground_set(p, labels, foreground,
+        all_patches_fgs = [get_foreground_set(p, pred_affs, foreground,
                                               patchshape, rad,
                                               kwargs['patch_threshold'],
                                               sample=kwargs['sample'])
                            for p in all_patches]
-        all_patches_bgs = [get_background_set(p, labels, foreground,
+        all_patches_bgs = [get_background_set(p, pred_affs, foreground,
                                               patchshape, rad,
                                               kwargs['patch_threshold'],
                                               sample=kwargs['sample'])
@@ -104,6 +104,15 @@ def loadFromFile(filename, shape=None, key=None):
             print("provide hdf key for array")
             exit(-1)
         return np.array(h5py.File(filename, 'r')[key])
+    elif filename.endswith("zarr"):
+        print("as zarr")
+        if key is None:
+            print("provide hdf key for array")
+            exit(-1)
+        print(key)
+        dst = np.array(zarr.open(filename, mode='r')[key])
+        print(dst.shape)
+        return dst
     elif filename.endswith("npy"):
         print("as npy")
         return np.load(filename)
@@ -118,16 +127,14 @@ def loadFromFile(filename, shape=None, key=None):
                 print(e)
                 exit(-1)
             return array
+
     else:
         print("invalid file")
         exit(-1)
 
 
 def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
-    # todo: extend to use zarr
-
-    numinst_prob = None
-    mask = None
+    numinst = None
 
     # import from hdf or zarr
     if aff_file.endswith((".hdf", ".zarr")):
@@ -206,10 +213,6 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
                 raise RuntimeError("check dimensions of array %s %s", aff_file, aff_key)
             if kwargs['isbiHack']:
                 affinities = affinities[:, :, ::2, ::2]
-
-            if 'pred_numinst' in f['volumes'].keys():
-                numinst_prob = np.array(f['volumes/pred_numinst'])
-                numinst_prob = np.expand_dims(numinst_prob, axis=1)
         else:
             # "images" for 2D
             affinities = np.array(f['images/pred_affs'])
@@ -217,18 +220,9 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
                 affinities = np.expand_dims(affinities, axis=1)
 
             logger.info("affinities shape %s", affinities.shape)
-            imagekeys = f['images'].keys()
-            if 'pred_numinst' in imagekeys:
-                numinst_prob = np.array(f['images/pred_numinst'])
-                numinst_prob = np.expand_dims(numinst_prob, axis=1)
 
-        fg_key = kwargs.get('fg_key', None)
-        if numinst_prob is None and fg_key is not None:
-            if fg_key in f:
-                # should be set explicitly, so no .get(.., default)
-                # in [vote_instances]
-                fg_thresh = kwargs['fg_thresh_vi']
-                mask = np.array(f[fg_key]) > fg_thresh
+        numinst = maybeLoadNuminst(f, **kwargs)
+        foreground, _ = loadFg(f, **kwargs)
 
         if aff_file.endswith(".hdf"):
             f.close()
@@ -239,6 +233,11 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
         if affinities.shape[1] != 1:
             affinities = np.expand_dims(affinities, axis=1)
         logger.info("%s", affinities.shape)
+        mid = np.prod(kwargs['patchshape']) // 2
+        foreground = np.array(affinities[mid])
+        fg_thresh = getFgThreshold(**kwargs)
+        foreground = foreground > fg_thresh
+        numinst = 1*foreground
 
     # not implemented file format
     else:
@@ -247,7 +246,68 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
 
     if np.min(affinities) < 0 and np.max(affinities) > 1:
         affinities = scipy.special.expit(affinities)
-    return affinities, numinst_prob, mask
+    return affinities, numinst, foreground
+
+
+def getFgThreshold(**kwargs):
+    if kwargs.get('fg_thresh_vi', -1) > 0:
+        return kwargs['fg_thresh_vi']
+    else:
+        return kwargs['patch_threshold']
+
+def maybeLoadNuminst(f, **kwargs):
+    numinst = None
+    if 'numinst_key' in kwargs:
+        numinst_prob = np.array(f[kwargs['numinst_key']])
+        numinst_prob = np.squeeze(numinst_prob)
+        if len(numinst_prob.shape) == 3:
+            numinst_prob = np.expand_dims(numinst_prob, axis=1)
+        numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
+    return numinst
+
+
+def loadFg(f, **kwargs):
+    aff_key = kwargs['aff_key']
+    fg_key = kwargs.get('fg_key', None)
+    numinst_key = kwargs.get('numinst_key', None)
+    fg_thresh = getFgThreshold(**kwargs)
+    foreground = None
+    # should be set explicitly, so no .get(.., default)
+    # in [vote_instances]
+    if fg_key is not None:
+        if fg_key == numinst_key:
+            foreground = np.array(f[fg_key])[1, ...]
+            key = numinst_key
+        else:
+            foreground = np.array(f[fg_key])
+            key = fg_key
+    else:
+        mid = np.prod(kwargs['patchshape']) // 2
+        foreground = np.array(f[aff_key][mid])
+        key = aff_key
+
+    foreground = foreground > fg_thresh
+    return foreground, key
+
+
+def returnFg(affs, numinst_prob, fg, **kwargs):
+    fg_key = kwargs.get('fg_key', None)
+    numinst_key = kwargs.get('numinst_key', None)
+    fg_thresh = getFgThreshold(**kwargs)
+    foreground = None
+    # should be set explicitly, so no .get(.., default)
+    # in [vote_instances]
+    if fg_key is not None:
+        if fg_key == numinst_key:
+            foreground = numinst_prob[1, ...]
+        else:
+            foreground = np.squeeze(fg)
+    else:
+        mid = np.prod(kwargs['patchshape']) // 2
+        foreground = affs[mid]
+
+    foreground = foreground > fg_thresh
+    return foreground
 
 
 def getResKey(**kwargs):
@@ -265,7 +325,7 @@ def getResKey(**kwargs):
     return res_ext
 
 
-def loadKernelFromFile(filename, labelshape, patchshape, neighshape,
+def loadKernelFromFile(filename, affshape, patchshape, neighshape,
                        patch_threshold):
     with open(os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -276,10 +336,10 @@ def loadKernelFromFile(filename, labelshape, patchshape, neighshape,
                 break
             code += ln
 
-    datacsize = labelshape[0]
-    datazsize = labelshape[1]
-    dataysize = labelshape[2]
-    dataxsize = labelshape[3]
+    datacsize = affshape[0]
+    datazsize = affshape[1]
+    dataysize = affshape[2]
+    dataxsize = affshape[3]
     nsz = int(neighshape[0])
     nsy = int(neighshape[1])
     nsx = int(neighshape[2])
@@ -314,13 +374,18 @@ def loadKernelFromFile(filename, labelshape, patchshape, neighshape,
 def setKernelBuildOptions(step=None, **kwargs):
     build_options = []
     if kwargs.get("vi_bg_use_inv_th", True):
-        logger.info("bg in rank: 1-th")
-        build_options = ['-DUSE_INV_TH']
+        logger.info("bg defined as: 1-th")
+        if kwargs['patch_threshold'] < 0.5:
+            logger.warning("bg defined as: 1-th, invalid: th < 0.5, switching..")
+            logger.info("bg defined as: <th")
+            build_options = ['-DUSE_LESS_THAN_TH']
+        else:
+            build_options = ['-DUSE_INV_TH']
     elif kwargs.get("vi_bg_use_half_th", False):
-        logger.info("bg in rank: th/2")
+        logger.info("bg defined as: th/2")
         build_options = ['-DUSE_HALF_TH']
     elif kwargs.get("vi_bg_use_less_than_th", False):
-        logger.info("bg in rank: <th")
+        logger.info("bg defined as: <th")
         build_options = ['-DUSE_LESS_THAN_TH']
     else:
         raise RuntimeError("how is bg defined for vote instances?")

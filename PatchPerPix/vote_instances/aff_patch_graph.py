@@ -110,14 +110,14 @@ def computeAndStorePatchPairs(selected_patches_list, patchshape, **kwargs):
     return arr
 
 
-def computePatchGraph_cuda(labels, consensus_vote_array,
+def computePatchGraph_cuda(pred_affs, consensus_vote_array,
                            selected_patch_pairsIDs,
                            patchshape, neighshape, **kwargs):
     if kwargs.get("flip_cons_arr_axes", False):
         cuda_fn = "cuda/computePatchGraph6.cu"
     else:
         cuda_fn = "cuda/computePatchGraph.cu"
-    code = loadKernelFromFile(cuda_fn, labels.shape,
+    code = loadKernelFromFile(cuda_fn, pred_affs.shape,
                               patchshape, neighshape,
                               kwargs['patch_threshold'])
 
@@ -151,7 +151,7 @@ def computePatchGraph_cuda(labels, consensus_vote_array,
                 (num_pairs_block + blockshape[0] - 1) // blockshape[0], 1, 1)
             offset = np.int32(i * bs)
             with kwargs['mutex']:
-                kernel(labels, consensus_vote_array, affinity_graph_mat,
+                kernel(pred_affs, consensus_vote_array, affinity_graph_mat,
                        selected_patch_pairsIDs, np.uint64(num_pairs_block),
                        offset, block=blockshape, grid=gridshape)
                 logger.info("syncing")
@@ -160,7 +160,7 @@ def computePatchGraph_cuda(labels, consensus_vote_array,
         # create without manually splitting in blocks
         offset = np.int32(0)
         with kwargs['mutex']:
-            kernel(labels, consensus_vote_array, affinity_graph_mat,
+            kernel(pred_affs, consensus_vote_array, affinity_graph_mat,
                    selected_patch_pairsIDs, np.uint64(num_pairs),
                    offset, block=blockshape, grid=gridshape)
 
@@ -190,8 +190,8 @@ def computePatchGraph(
         selected_patches_list,
         num_selected,
         selected_patch_pairsIDs,
-        labels,
-        foreground_to_cover,
+        pred_affs,
+        mask_to_cover,
         patchshape,
         neighshape,
         rad,
@@ -201,14 +201,14 @@ def computePatchGraph(
         **kwargs
 ):
     if kwargs['cuda']:
-        return computePatchGraph_cuda(labels, consensus_vote_array,
+        return computePatchGraph_cuda(pred_affs, consensus_vote_array,
                                       selected_patch_pairsIDs,
                                       patchshape, neighshape,
                                       **kwargs)
     affinity_graph = nx.Graph()
 
     selected_patch_foregrounds = [
-        get_foreground_set(rp[0], labels, foreground_to_cover,
+        get_foreground_set(rp[0], pred_affs, mask_to_cover,
                            patchshape, rad, kwargs['patch_threshold'],
                            sample=kwargs['sample'])
         for rp in selected_patches_list]

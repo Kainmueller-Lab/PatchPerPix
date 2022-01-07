@@ -191,6 +191,13 @@ def postprocess_fg(samples, output_folder, **kwargs):
                 compression='gzip',
             )
 
+        if kwargs.get('export_skeleton_nrrds', False):
+            mask = pred > 0
+            mask = (skeletonize_3d(mask) > 0).astype(np.uint8)
+            # check if transpose necessary?
+            mask = np.transpose(mask, (2, 1, 0))
+            nrrd.write(outfn.replace(".hdf", ".nrrd"), mask)
+
 
 if __name__ == '__main__':
 

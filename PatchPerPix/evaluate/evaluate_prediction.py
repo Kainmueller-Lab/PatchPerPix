@@ -49,10 +49,10 @@ def evaluate_patch(
     # read gt labeling
     if label_fn.endswith('zarr'):
         inf = zarr.open(label_fn, mode='r')
-        labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+        labels = np.array(inf[kwargs['sample_gt_key']])
     elif label_fn.endswith('hdf'):
         with h5py.File(label_fn, 'r') as inf:
-            labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+            labels = np.array(inf[kwargs['sample_gt_key']])
     else:
         raise NotImplementedError
 
@@ -72,51 +72,71 @@ def evaluate_patch(
         raise NotImplementedError
     neighborhood = np.array(neighborhood)
 
-    # create gt affinities
-    aff_fun = get_affinity_function(labels.shape, kwargs['overlapping_inst'])
-    gt_affs = aff_fun(labels, neighborhood)
+    # zero out overlapping regions
     numinst = np.sum(labels > 0, axis=0)
+    # create gt affinities
+    labels = np.squeeze(labels)
+    aff_fun = get_affinity_function(labels.shape, kwargs.get('overlapping_inst'))
+    gt_affs = aff_fun(labels, neighborhood)
     pred_affs[:, numinst > 1] = 0
     gt_affs[:, numinst > 1] = 0
     num_gt = np.sum(gt_affs > 0)
     mid = np.prod(kwargs['patchshape']) // 2
+    # print("gt fg patches: ", np.sum(gt_affs[mid] > 0))
 
-    threshs = kwargs['threshs']
+    threshs = kwargs['eval_patch_thresholds']
     metrics = {}
     for thresh in threshs:
+        thresh_key = str(round(thresh, 2)).replace('.', '_')
+        # TODO: skip removing small components here, maybe add later?
+        rsc_key = "rsc_" + str(int(0))
+
         binarized = pred_affs > thresh
+        # print("pred fg patches: ", np.sum(binarized[mid] > 0))
         num_pred = np.sum(binarized)
+
+        tp = np.count_nonzero(np.logical_and(binarized, gt_affs))
+        precision = tp / float(num_pred)
+        recall = tp / float(num_gt)
+        f1 = 2 * (precision * recall) / (precision + recall)
+        # mse = np.mean(np.abs(gt_affs - pred_affs) ** 2)
+        # print(tp, precision, recall, f1)
+
+        metrics[thresh_key] = {}
+        metrics[thresh_key][rsc_key] = {
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            # 'mse': mse,
+        }
 
         if kwargs['return_patches']:
             tp = np.logical_and(binarized, gt_affs)
-            print('tp: ', np.sum(tp))
-            fp = np.logical_and(binarized, np.logical_not(tp))
-            fn = np.logical_and(gt_affs, np.logical_not(tp))
-            tp_patch_coords = np.transpose(np.nonzero(tp[mid]))
-            print(mid, np.sum(tp[mid]))
-            mse = np.abs(gt_affs - pred_affs)
-            print(mse.shape, mse.dtype, np.min(mse), np.max(mse))
-            metrics[str(round(thresh, 2)).replace('.', '_')] = {
-                'tp': tp,
-                'fp': fp,
-                'fn': fn,
-                'mse': mse,
-                'tp_patch_coords': tp_patch_coords,
-            }
+            intersectionFG = np.count_nonzero(tp, axis=0)
+            unionFG = np.count_nonzero(np.logical_or(binarized, gt_affs), axis=0)
+            # assert np.all(intersectionFG[unionFG == 0] == 0), \
+            #     "should not happen"
 
-        else:
-            tp = np.sum(np.logical_and(binarized, gt_affs))
-            precision = tp / float(num_pred)
-            recall = tp / float(num_gt)
-            f1 = 2 * (precision * recall) / (precision + recall)
-            mse = np.mean(np.abs(gt_affs - pred_affs) ** 2)
-
-            metrics[str(round(thresh, 2)).replace('.', '_')] = {
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'mse': mse,
-            }
+            unionFG[unionFG == 0] = 1
+            IOU = (intersectionFG/unionFG)
+            # fp = np.logical_and(binarized, np.logical_not(tp))
+            # fn = np.logical_and(gt_affs, np.logical_not(tp))
+            # tp_patch_coords = np.transpose(np.nonzero(tp[mid]))
+            # print(mid, np.sum(tp[mid]))
+            # mse = np.abs(gt_affs - pred_affs)
+            # print(mse.shape, mse.dtype, np.min(mse), np.max(mse))
+            metrics[thresh_key][rsc_key].update({
+                # 'tp': tp,
+                # 'fp': fp,
+                # 'fn': fn,
+                # 'mse': mse,
+                # 'tp_patch_coords': tp_patch_coords,
+            })
+            if kwargs["store_iou"]:
+                metrics[thresh_key][rsc_key]["IOU"] = IOU
+            else:
+                metrics[thresh_key][rsc_key]["IOU_mean"] = np.mean(IOU[unionFG>1])
+            logger.info("%s", metrics)
 
     return metrics
 
@@ -139,10 +159,10 @@ def evaluate_numinst(
     # read gt labeling
     if label_fn.endswith('zarr'):
         inf = zarr.open(label_fn, mode='r')
-        labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+        labels = np.array(inf[kwargs['sample_gt_key']])
     elif label_fn.endswith('hdf'):
         with h5py.File(label_fn, 'r') as inf:
-            labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+            labels = np.array(inf[kwargs['sample_gt_key']])
     else:
         raise NotImplementedError
 
@@ -204,7 +224,7 @@ def evaluate_numinst(
             'f1': f1,
         }
 
-    if kwargs.get('output_folder', None) is not None:
+    if kwargs.get('save_as_png', False):
         outfn = os.path.join(
             kwargs['output_folder'],
             os.path.basename(prediction_fn).split('.')[0] + '.png'
@@ -222,28 +242,42 @@ def evaluate_fg(
     # read prediction affinities
     if prediction_fn.endswith('zarr'):
         inf = zarr.open(prediction_fn, mode='r')
-        pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
+        if kwargs.get('fg_key') is None:
+            mid = int(np.prod(kwargs['patchshape']) / 2)
+            pred_numinst = np.squeeze(
+                np.array(inf[kwargs['aff_key']][mid]))
+        else:
+            pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
     elif prediction_fn.endswith('hdf'):
         with h5py.File(prediction_fn, 'r') as inf:
-            pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
+            if kwargs.get('fg_key') is None:
+                mid = int(np.prod(kwargs['patchshape']) / 2)
+                pred_numinst = np.squeeze(
+                    np.array(inf[kwargs['aff_key']][mid]))
+            else:
+                pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
     else:
         raise NotImplementedError
 
     # read gt labeling
+    print(label_fn)
     if label_fn.endswith('zarr'):
         inf = zarr.open(label_fn, mode='r')
-        labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+        labels = np.array(inf[kwargs['sample_gt_key']])
     elif label_fn.endswith('hdf'):
         with h5py.File(label_fn, 'r') as inf:
-            labels = np.squeeze(np.array(inf[kwargs['sample_gt_key']]))
+            labels = np.array(inf[kwargs['sample_gt_key']])
     else:
         raise NotImplementedError
 
     gt_mask = np.max(labels > 0, axis=0).astype(np.uint8)
 
     metrics = {}
-    threshs = kwargs.get('threshs', [0.9])
-    rm_comps = kwargs.get('remove_small_comps', [0])
+    threshs = kwargs.get('eval_fg_thresholds', [0.9])
+    if not kwargs.get('remove_small_comps'):
+        rm_comps = [0]
+    else:
+        rm_comps = kwargs.get('remove_small_comps')
     rm_comps = sorted(rm_comps)
     print('rm_comps: ', rm_comps)
 
@@ -256,6 +290,7 @@ def evaluate_fg(
                 pred_mask, _ = ndimage.label(pred_mask, np.ones((3, 3, 3)))
                 pred_mask = remove_small_components(pred_mask, rm_comp)
                 pred_mask = pred_mask > 0
+            print(gt_mask.shape, pred_mask.shape)
             num_gt = np.sum(gt_mask)
             num_pred = np.sum(pred_mask)
 
@@ -282,8 +317,8 @@ def evaluate_fg(
 
             else:
                 tp = np.sum(np.logical_and(gt_mask, pred_mask))
-                print('numinst: num gt: %i, num pred: %i, num tp: %i'
-                      % (num_gt, num_pred, tp))
+                print('thresh: %f, numinst: num gt: %i, num pred: %i, num tp: %i'
+                      % (thresh, num_gt, num_pred, tp))
 
                 if num_pred > 0 and tp > 0:
                     precision = tp / float(num_pred)
@@ -294,7 +329,8 @@ def evaluate_fg(
                     recall = 0
                     f1 = 0
 
-            metrics[thresh_key][str(int(rm_comp))] = {
+            rsc_key = "rsc_" + str(int(rm_comp))
+            metrics[thresh_key][rsc_key] = {
                 'num_gt': num_gt,
                 'num_pred': num_pred,
                 'num_tp': tp,
@@ -302,15 +338,15 @@ def evaluate_fg(
                 'recall': recall,
                 'f1': f1,
             }
+            print(metrics[thresh_key][rsc_key])
 
-        if kwargs.get('output_folder', None) is not None:
+        if kwargs.get('save_as_png', False):
             outfn = os.path.join(
                 kwargs['output_folder'],
                 os.path.basename(prediction_fn).split('.')[0] +
                 '_' + str(round(thresh, 2)).replace('.', '_') + '.png'
             )
             io.imsave(outfn, np.max(pred_mask, axis=0).astype(np.uint8) * 255)
-
     return metrics
 
 
@@ -355,7 +391,7 @@ def main():
                                     sample_gt_key=args.gt_key,
                                     patchshape=patchshape,
                                     overlapping_inst=True,
-                                    threshs=[0.9],
+                                    eval_fg_thresholds=[0.9],
                                     return_patches=True,
                                     )
             for p, l in zip(preds, labels))
@@ -366,7 +402,7 @@ def main():
                            gt_sample_key=args.gt_key,
                            patchshape=patchshape,
                            overlapping_inst=True,
-                           threshs=[0.9],
+                           eval_fg_thresholds=[0.9],
                            return_patches=True,
                            ))
 

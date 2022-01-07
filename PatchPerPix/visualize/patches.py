@@ -190,6 +190,8 @@ def visualize_patches(
                     )
             elif out_file.endswith('.png'):
                 patched = (patched * 255).astype(np.uint8)
+                patched = np.squeeze(patched)
+                # print(patched.shape)
                 io.imsave(out_file, patched)
             elif out_file.endswith('.tif'):
                 patched = np.squeeze(patched)

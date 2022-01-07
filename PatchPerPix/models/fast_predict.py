@@ -10,7 +10,7 @@ class FastPredict:
         self.next_features = None
         self.batch_size = None
         self.predictions = None
-        self.channel = params['num_channels']
+        self.channel = params.get('num_channels', 1)
 
     def _create_generator(self):
         while not self.closed:

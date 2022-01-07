@@ -14,32 +14,32 @@ else:
 logger = logging.getLogger(__name__)
 
 def affGraphToInstancesT(
-        labels,
+        pred_affs,
         patchshape,
         rad,
         debug_output1,
         debug_output2,
         instances,
-        foreground_to_cover,
+        foreground,
         affgraph, selected_patch_pairs,
         **kwargs
 ):
     affgraph = loadAffgraph(affgraph, selected_patch_pairs)
 
-    return affGraphToInstances(affgraph, labels, patchshape, rad,
+    return affGraphToInstances(affgraph, pred_affs, patchshape, rad,
                                debug_output1, debug_output2,
-                               instances, foreground_to_cover, **kwargs)
+                               instances, foreground, **kwargs)
 
 
 def affGraphToInstances(
         affinity_graph,
-        labels,
+        pred_affs,
         patchshape,
         rad,
         debug_output1,
         debug_output2,
         instances,
-        foreground_to_cover,
+        foreground,
         **kwargs
 ):
     logger.info("compute labeling")
@@ -65,11 +65,11 @@ def affGraphToInstances(
             current_instance = np.zeros_like(instances)
         for idx in cc:
             if kwargs.get('sparse_labels'):
-                patch = labels["_".join(str(i) for i in idx)]
+                patch = pred_affs["_".join(str(i) for i in idx)]
             else:
-                labelslice = tuple([slice(0, labels.shape[0])] +
+                affslice = tuple([slice(0, pred_affs.shape[0])] +
                                    [idx[i] for i in range(len(idx))])
-                patch = labels[labelslice]
+                patch = pred_affs[affslice]
 
             patch = np.reshape(patch, patchshape)
             start = idx - rad
@@ -124,15 +124,15 @@ def affGraphToInstances(
                                         if d != 0 else float(w)
                                         for d in debug_output2[0][rr, cc]]
 
-        return instances, foreground_to_cover.astype(np.uint8), \
+        return instances, foreground.astype(np.uint8), \
                debug_output1, debug_output2
     else:
         if kwargs.get("pad_with_ps", False):
             instances = instances[rad[0]:instances.shape[0]-rad[0],
                                   rad[1]:instances.shape[1]-rad[1],
                                   rad[2]:instances.shape[2]-rad[2]]
-            foreground_to_cover = foreground_to_cover[
-                rad[0]:foreground_to_cover.shape[0]-rad[0],
-                rad[1]:foreground_to_cover.shape[1]-rad[1],
-                rad[2]:foreground_to_cover.shape[2]-rad[2]]
-        return instances, foreground_to_cover.astype(np.uint8)
+            foreground = foreground[
+                rad[0]:foreground.shape[0]-rad[0],
+                rad[1]:foreground.shape[1]-rad[1],
+                rad[2]:foreground.shape[2]-rad[2]]
+        return instances, foreground.astype(np.uint8)
