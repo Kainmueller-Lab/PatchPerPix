@@ -129,6 +129,7 @@ def upsample(fmaps_in, factors, num_fmaps,
         fmaps = conv_trans_layer(
             fmaps_in,
             filters=num_fmaps,
+            # TODO filters=fmaps_in.get_shape().as_list()[1],
             kernel_size=factors,
             strides=factors,
             padding=padding,
@@ -256,12 +257,23 @@ def crop(a, shape):
     '''
 
     in_shape = a.get_shape().as_list()
+    add_batch = False
+    if shape[0] is None and in_shape[0] is None:
+        shape = shape[1:]
+        in_shape = in_shape[1:]
+        add_batch = True
 
     offset = list([
         (i - s) // 2
         for i, s in zip(in_shape, shape)
     ])
 
+    print('offset: ', offset, ', shape: ', shape)
+    if add_batch:
+        print('offset: ', offset)
+        offset = [0, ] + offset
+        shape = [-1, ] + shape
+    print('raw: ', a.shape)
     b = tf.slice(a, offset, shape)
 
     return b
