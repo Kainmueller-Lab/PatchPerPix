@@ -1,6 +1,8 @@
 INFO
 =====
 
+not up-to-date! everything is called via the run_ppp script!
+
 Overview
 ----------
 main function consists of 5 major steps:
