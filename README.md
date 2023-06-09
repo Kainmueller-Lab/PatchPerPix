@@ -13,7 +13,12 @@ We present a novel method for proposal free instance segmentation that can handl
 
 ## Installation
 
-This package requires Python 3 and TensorFlow 1.x (we do not support Tensorflow 2.x). It contains the core code for the neural network model and our instance segmentation method.
+This package requires Python 3 and PyTorch. It contains the core code for the neural network model and our instance segmentation method.
+
+**Note**
+Previous versions (e.g., for the experiments published in our ECCV 2020 paper) require TensorFlow 1.x.
+If you want to run older experiments please checkout the respective tag: [eccv2020](https://github.com/Kainmueller-Lab/PatchPerPix/tree/ea4e2d4)
+If you have any questions, please open an issue (and mention that you're running the older code)
 
 ### Core
 The recommended way is to install the package into your conda/python virtual environment. We recommend to use conda to install tensorflow.
@@ -21,7 +26,7 @@ The recommended way is to install the package into your conda/python virtual env
 ```
 conda create --name ppp
 conda activate ppp
-conda install python=3.7 tensorflow-gpu=1.15 cudatoolkit cudatoolkit-dev -c conda-forge
+conda install python=3.9 pytorch-cuda torchvision torchaudio cudatoolkit -c pytorch -c nvidia
 git clone https://github.com/Kainmueller-Lab/PatchPerPix.git
 cd PatchPerPix
 pip install -e .
