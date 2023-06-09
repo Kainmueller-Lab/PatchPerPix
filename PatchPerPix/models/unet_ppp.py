@@ -142,7 +142,8 @@ def upsample(fmaps_in, factors, num_fmaps,
     return fmaps
 
 
-def crop_to_factor(fmaps_in, factor, kernel_sizes):
+def crop_to_factor(fmaps_in, factor, kernel_sizes,
+                   padding='valid'):
     '''Crop feature maps to ensure translation equivariance with stride of
     upsampling factor. This should be done right after upsampling, before
     application of the convolutions with the given kernel sizes.
@@ -151,17 +152,20 @@ def crop_to_factor(fmaps_in, factor, kernel_sizes):
     '''
 
     shape = fmaps_in.get_shape().as_list()
-    spatial_dims = 3 if len(shape) == 5 else 4
+    spatial_dims = len(shape) - 2
     spatial_shape = shape[-spatial_dims:]
 
     # the crop that will already be done due to the convolutions
-    convolution_crop = list(
-        sum(
-            (ks if isinstance(ks, int) else ks[d]) - 1
-            for ks in kernel_sizes
-        )
-        for d in range(spatial_dims)
-    )
+    if padding == 'valid':
+        convolution_crop = list(
+            sum(
+                (ks if isinstance(ks, int) else ks[d]) - 1
+                for ks in kernel_sizes
+            )
+            for d in range(spatial_dims)
+         )
+    else:
+        convolution_crop = [0]*spatial_dims
     print("crop_to_factor: factor =", factor)
     print("crop_to_factor: kernel_sizes =", kernel_sizes)
     print("crop_to_factor: convolution_crop =", convolution_crop)
@@ -352,9 +356,9 @@ def unet(
     print(prefix + "f_in: " + str(fmaps_in.shape))
 
     if kernel_size_down is None:
-        kernel_size_down = [[3, 3]]*(len(downsample_factors) + 1)
+        kernel_size_down = [[kernel_size]*num_repetitions]*(len(downsample_factors) + 1)
     if kernel_size_up is None:
-        kernel_size_up = [[3, 3]]*len(downsample_factors)
+        kernel_size_up = [[kernel_size]*num_repetitions]*len(downsample_factors)
 
     # convolve
     f_left = conv_pass(
@@ -418,7 +422,7 @@ def unet(
 
     print(prefix + "g_out_upsampled: " + str(g_out_upsampled.shape))
 
-    if crop_factor:
+    if crop_factor and layer == 0:
         factor_product = None
         for factor in downsample_factors[layer:]:
             if factor_product is None:
@@ -431,7 +435,8 @@ def unet(
         g_out_upsampled = crop_to_factor(
                     g_out_upsampled,
                     factor=factor_product,
-                    kernel_sizes=kernel_size_up[layer])
+                    kernel_sizes=kernel_size_up[layer],
+                    padding=padding)
         print(prefix + "g_out_upsampled factor crop: " + str(g_out_upsampled.shape))
         # copy-crop
     f_left_cropped = crop_spatial(f_left, g_out_upsampled.get_shape().as_list())

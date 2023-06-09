@@ -64,6 +64,7 @@ def conv_pass(
             data_format='channels_first',
             activation=activation,
             name=name + '_%i' % i)
+        logger.info("%s", fmaps)
 
     return fmaps
 
@@ -380,7 +381,7 @@ def autoencoder(fmaps_in, **kwargs):
                            name='upsample_%i' % idx,
                            upsampling=kwargs['upsampling'],
                            padding=kwargs['padding'])
-
+            logger.info("%s", net)
             net = conv_pass(
                 net,
                 num_fmaps=nf,
@@ -452,6 +453,7 @@ def decoder(fmaps_in, **kwargs):
                            name='upsample_%i' % idx,
                            upsampling=kwargs['upsampling'],
                            padding=kwargs['padding'])
+            logger.info("%s", net)
             net = conv_pass(
                 net,
                 num_fmaps=nf,
