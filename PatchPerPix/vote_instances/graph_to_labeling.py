@@ -55,10 +55,11 @@ def affGraphToInstances(
 
     # instance output:
     one_instance_per_channel = kwargs.get('one_instance_per_channel', False)
+    no_overlap_per_channel = kwargs.get("no_overlap_per_channel", False)
     instance_value = 0
     instance_list = []
     for instance_value, cc in enumerate(ccs):
-        if one_instance_per_channel:
+        if one_instance_per_channel or no_overlap_per_channel:
             current_instance = np.zeros_like(instances)
         for idx in cc:
             if kwargs.get('sparse_labels'):
@@ -75,7 +76,7 @@ def affGraphToInstances(
             stop = np.minimum(stop, instances.shape)
             startstopslice = tuple([slice(start[i], stop[i])
                                     for i in range(len(start))])
-            if one_instance_per_channel:
+            if one_instance_per_channel or no_overlap_per_channel:
                 current_instance[startstopslice][
                     patch > kwargs['patch_threshold']] = instance_value + 1
             else:
@@ -92,7 +93,25 @@ def affGraphToInstances(
                 debug_output1[debugslice] += instance_value + 1
         if one_instance_per_channel:
             instance_list.append(current_instance)
-    if one_instance_per_channel:
+        if no_overlap_per_channel:
+            # check if instance can be inserted in existing channel without overlap
+            if len(instance_list) == 0:
+                instance_list.append(current_instance)
+            else:
+                instance_mask = current_instance > 0
+                if np.sum(instance_mask) > 2000:
+                    inserted = False
+                    for channel in instance_list:
+                        if np.all(channel[instance_mask] == 0):
+                            channel[instance_mask] = instance_value + 1
+                            inserted = True
+                            break
+                    # if not append new channel with instance mask
+                    if inserted == False:
+                        instance_list.append(current_instance)
+                else:
+                    instance_list[0][instance_mask] = instance_value + 1
+    if one_instance_per_channel or no_overlap_per_channel:
         instances = np.stack(instance_list, axis=0)
 
     logger.info("done compute labeling")
