@@ -2,6 +2,7 @@ import numpy as np
 import zarr
 import h5py
 import argparse
+import logging
 import os
 from glob import glob
 from joblib import Parallel, delayed
@@ -10,6 +11,7 @@ from skimage import io
 from skimage.morphology import skeletonize_3d
 from scipy import ndimage
 
+import gunpowder as gp
 import neurolight.gunpowder as nl
 
 if __package__ is None or __package__ == '':
@@ -17,16 +19,18 @@ if __package__ is None or __package__ == '':
 else:
     from ..util import remove_small_components
 
+logger = logging.getLogger(__name__)
+
 
 def get_affinity_function(shape, overlapping_inst):
     if overlapping_inst and len(shape) == 3:
-        seg_to_aff_fun = nl.add_affinities.seg_to_affgraph_2d_multi
+        seg_to_aff_fun = gp.add_affinities.seg_to_affgraph_2d_multi
     elif len(shape) == 2:
-        seg_to_aff_fun = nl.add_affinities.seg_to_affgraph_2d
+        seg_to_aff_fun = gp.add_affinities.seg_to_affgraph_2d
     elif overlapping_inst and len(shape) == 4:
-        seg_to_aff_fun = nl.add_affinities.seg_to_affgraph_3d_multi
+        seg_to_aff_fun = gp.add_affinities.seg_to_affgraph_3d_multi
     else:
-        seg_to_aff_fun = nl.add_affinities.seg_to_affgraph
+        seg_to_aff_fun = gp.add_affinities.seg_to_affgraph
 
     return seg_to_aff_fun
 
@@ -39,7 +43,7 @@ def evaluate_patch(
     # read prediction affinities
     if prediction_fn.endswith('zarr'):
         inf = zarr.open(prediction_fn, mode='r')
-        pred_affs = np.squeeze(np.array(inf[kwargs['aff_key']]))
+        pred_affs = inf[kwargs['aff_key']]
     elif prediction_fn.endswith('hdf'):
         with h5py.File(prediction_fn, 'r') as inf:
             pred_affs = np.squeeze(np.array(inf[kwargs['aff_key']]))
@@ -77,7 +81,10 @@ def evaluate_patch(
     # create gt affinities
     labels = np.squeeze(labels)
     aff_fun = get_affinity_function(labels.shape, kwargs.get('overlapping_inst'))
+    logger.info("computing gt affs")
     gt_affs = aff_fun(labels, neighborhood)
+    logger.info("gt affs computed")
+
     pred_affs[:, numinst > 1] = 0
     gt_affs[:, numinst > 1] = 0
     num_gt = np.sum(gt_affs > 0)
@@ -87,6 +94,8 @@ def evaluate_patch(
     threshs = kwargs['eval_patch_thresholds']
     metrics = {}
     for thresh in threshs:
+        logger.info("thresh %s", thresh)
+
         thresh_key = str(round(thresh, 2)).replace('.', '_')
         # TODO: skip removing small components here, maybe add later?
         rsc_key = "rsc_" + str(int(0))
@@ -96,11 +105,11 @@ def evaluate_patch(
         num_pred = np.sum(binarized)
 
         tp = np.count_nonzero(np.logical_and(binarized, gt_affs))
-        precision = tp / float(num_pred)
-        recall = tp / float(num_gt)
-        f1 = 2 * (precision * recall) / (precision + recall)
+        precision = tp / max(float(num_pred), 1)
+        recall = tp / max(float(num_gt), 1)
+        f1 = 2 * (precision * recall) / max((precision + recall), 1)
         # mse = np.mean(np.abs(gt_affs - pred_affs) ** 2)
-        # print(tp, precision, recall, f1)
+        logger.info("%s %s %s %s", tp, precision, recall, f1)
 
         metrics[thresh_key] = {}
         metrics[thresh_key][rsc_key] = {
@@ -110,7 +119,7 @@ def evaluate_patch(
             # 'mse': mse,
         }
 
-        if kwargs['return_patches']:
+        if kwargs.get('return_patches'):
             tp = np.logical_and(binarized, gt_affs)
             intersectionFG = np.count_nonzero(tp, axis=0)
             unionFG = np.count_nonzero(np.logical_or(binarized, gt_affs), axis=0)
