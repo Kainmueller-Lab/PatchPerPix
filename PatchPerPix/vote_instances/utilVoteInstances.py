@@ -152,6 +152,7 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
             aff_key = kwargs.get('aff_key')
             if aff_key is None:
                 aff_key = 'volumes/pred_affs'
+                kwargs['aff_key'] = aff_key
 
             # 3D/ISBI2012:
             rotate_axes = False
@@ -222,7 +223,8 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
             logger.info("affinities shape %s", affinities.shape)
 
         numinst = maybeLoadNuminst(f, **kwargs)
-        foreground, _ = loadFg(f, **kwargs)
+        foreground, _ = loadFg(f, **kwargs, patchshape=patchshape)
+
 
         if aff_file.endswith(".hdf"):
             f.close()
@@ -233,7 +235,7 @@ def loadAffinities(aff_file, res_ext, patchshape=None, **kwargs):
         if affinities.shape[1] != 1:
             affinities = np.expand_dims(affinities, axis=1)
         logger.info("%s", affinities.shape)
-        mid = np.prod(kwargs['patchshape']) // 2
+        mid = np.prod(patchshape) // 2
         foreground = np.array(affinities[mid])
         fg_thresh = getFgThreshold(**kwargs)
         foreground = foreground > fg_thresh
@@ -257,12 +259,16 @@ def getFgThreshold(**kwargs):
 
 def maybeLoadNuminst(f, **kwargs):
     numinst = None
-    if 'numinst_key' in kwargs:
+    if kwargs.get('numinst_key') is not None:
         numinst_prob = np.array(f[kwargs['numinst_key']])
         numinst_prob = np.squeeze(numinst_prob)
         if len(numinst_prob.shape) == 3:
             numinst_prob = np.expand_dims(numinst_prob, axis=1)
         numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
+        if kwargs.get('numinst_threshs'):
+            numinst = np.zeros(numinst_prob.shape[1:], dtype=np.uint8)
+            for i in range(len(kwargs['numinst_threshs'])):
+                numinst[numinst_prob[i+1]>kwargs['numinst_threshs'][i]] = i+1
     return numinst
 
 
@@ -274,23 +280,30 @@ def loadFg(f, **kwargs):
     foreground = None
     # should be set explicitly, so no .get(.., default)
     # in [vote_instances]
+
     if fg_key is not None:
-        if fg_key == numinst_key:
-            foreground = np.array(f[fg_key])[1, ...]
-            key = numinst_key
-        else:
-            foreground = np.array(f[fg_key])
-            key = fg_key
+        foreground = np.array(f[fg_key])
+        key = fg_key
+    elif numinst_key is not None:
+        numinst_prob = np.array(f[kwargs['numinst_key']])
+        numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
+        if kwargs.get('numinst_threshs'):
+            numinst = np.zeros(numinst_prob.shape[1:], dtype=np.uint8)
+            for i in range(len(kwargs['numinst_threshs'])):
+                numinst[numinst_prob[i+1]>kwargs['numinst_threshs'][i]] = i+1
+        foreground = (numinst > 0).astype(np.float32)
+        foreground = np.expand_dims(foreground, axis=0)
+        key = numinst_key
     else:
         mid = np.prod(kwargs['patchshape']) // 2
-        foreground = np.array(f[aff_key][mid])
+        foreground = np.expand_dims(np.array(f[aff_key][mid]), axis=0)
         key = aff_key
 
     foreground = foreground > fg_thresh
     return foreground, key
 
 
-def returnFg(affs, numinst_prob, fg, **kwargs):
+def returnFg(affs, numinst, fg, **kwargs):
     fg_key = kwargs.get('fg_key', None)
     numinst_key = kwargs.get('numinst_key', None)
     fg_thresh = getFgThreshold(**kwargs)
@@ -298,10 +311,9 @@ def returnFg(affs, numinst_prob, fg, **kwargs):
     # should be set explicitly, so no .get(.., default)
     # in [vote_instances]
     if fg_key is not None:
-        if fg_key == numinst_key:
-            foreground = numinst_prob[1, ...]
-        else:
-            foreground = np.squeeze(fg)
+        foreground = np.squeeze(fg)
+    elif numinst_key is not None:
+        foreground = numinst > 0
     else:
         mid = np.prod(kwargs['patchshape']) // 2
         foreground = affs[mid]

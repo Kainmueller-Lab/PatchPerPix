@@ -287,6 +287,12 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                                 numinst_prob = np.expand_dims(numinst_prob, axis=1)
                             numinst = np.argmax(numinst_prob,
                                                 axis=0).astype(np.uint8)
+                            if kwargs.get('numinst_threshs'):
+                                numinst = np.zeros(
+                                    numinst_prob.shape[1:], dtype=np.uint8)
+                                for i in range(len(kwargs['numinst_threshs'])):
+                                    th = kwargs['numinst_threshs'][i]
+                                    numinst[numinst_prob[i+1]>th] = i+1
                         else:
                             numinst = None
                             numinst_prob = None
@@ -296,7 +302,7 @@ def stitch_vote_instances(out_path, in_key, out_key, output_shape,
                                 overlap, bb_size, padding=False)
                         else:
                             fg = None
-                        foreground = returnFg(block, numinst_prob, fg, **kwargs)
+                        foreground = returnFg(block, numinst, fg, **kwargs)
 
                         if numinst is None:
                             numinst = np.copy(foreground)
@@ -610,6 +616,11 @@ def blockwise_vote_instances(
         if len(numinst_prob.shape) == 3:
             numinst_prob = np.expand_dims(numinst_prob, axis=1)
         numinst = np.argmax(numinst_prob, axis=0).astype(np.uint8)
+        if kwargs.get('numinst_threshs'):
+            numinst = np.zeros(numinst_prob.shape[1:], dtype=np.uint8)
+            for i in range(len(kwargs['numinst_threshs'])):
+                th = kwargs['numinst_threshs'][i]
+                numinst[numinst_prob[i+1]>th] = i+1
     else:
         numinst = None
         numinst_prob = None
@@ -619,7 +630,7 @@ def blockwise_vote_instances(
             padding=False)
     else:
         fg = None
-    foreground = returnFg(block, numinst_prob, fg, **kwargs)
+    foreground = returnFg(block, numinst, fg, **kwargs)
 
     if numinst is None:
         numinst = np.copy(foreground)
@@ -709,8 +720,7 @@ def main(pred_file, result_folder='.', **kwargs):
 
     # dataset keys
     aff_key = kwargs['aff_key']
-    fg_key = kwargs.get('fg_key')
-    numinst_key = kwargs.get('numinst_key')
+    numinst_key = kwargs.get("numinst_key")
     res_key = kwargs.get('res_key', 'vote_instances')
     cleaned_mask_key = 'volumes/foreground_cleaned'
     tmp_key = 'volumes/blocks'
@@ -722,8 +732,7 @@ def main(pred_file, result_folder='.', **kwargs):
         raise NotImplementedError
     aff_shape = in_f[aff_key].shape
     channel_order = [slice(0, aff_shape[0])]
-    pred_keys = []
-    pred_keys.append(aff_key)
+    pred_keys = [aff_key]
 
     if numinst_key is not None:
         numinst_shape = in_f[numinst_key].shape

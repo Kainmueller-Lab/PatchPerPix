@@ -147,12 +147,15 @@ def evaluate_numinst(
     **kwargs
 ):
     # read prediction affinities
+    fg_key = kwargs["fg_key"] if kwargs.get("fg_key") else kwargs["numinst_key"]
     if prediction_fn.endswith('zarr'):
         inf = zarr.open(prediction_fn, mode='r')
-        pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
+        pred_numinst_prob = np.squeeze(np.array(inf[kwargs.get(
+            'numinst_key', kwargs.get('fg_key'))]))
     elif prediction_fn.endswith('hdf'):
         with h5py.File(prediction_fn, 'r') as inf:
-            pred_numinst = np.squeeze(np.array(inf[kwargs['fg_key']]))
+            pred_numinst_prob = np.squeeze(np.array(inf[kwargs.get(
+                'numinst_key', kwargs.get('fg_key'))]))
     else:
         raise NotImplementedError
 
@@ -167,10 +170,19 @@ def evaluate_numinst(
         raise NotImplementedError
 
     gt_numinst = np.sum(labels > 0, axis=0).astype(np.uint8)
-    pred_numinst = np.argmax(pred_numinst, axis=0).astype(np.uint8)
+    if kwargs.get('numinst_threshs'):
+        pred_numinst = np.zeros(pred_numinst_prob.shape[1:], dtype=np.uint8)
+        for i in range(len(kwargs['numinst_threshs'])):
+            pred_numinst[pred_numinst_prob[i+1]>kwargs['numinst_threshs'][i]] = i+1
+    else:
+        pred_numinst = np.argmax(pred_numinst_prob, axis=0).astype(np.uint8)
 
     metrics = {}
+    if kwargs.get("max_numinst") is not None:
+        gt_numinst = np.clip(gt_numinst, 0, kwargs["max_numinst"])
+        pred_numinst = np.clip(pred_numinst, 0, kwargs["max_numinst"])
     inst = np.unique(gt_numinst)
+
     for i in inst:
         gt_mask = gt_numinst == i
         pred_mask = pred_numinst == i
