@@ -51,15 +51,12 @@ def affGraphToInstances(
         for e0, e1, a in affinity_graph.edges.data('aff'):
             if a > 0:
                 rpgrph.add_edge(e0, e1, weight=a)
-        # else:
-        # rpgrph = affinity_graph
         ccs = nx.connected_components(rpgrph)
 
     # instance output:
     one_instance_per_channel = kwargs.get('one_instance_per_channel', False)
     instance_value = 0
     instance_list = []
-    # cnt = 1
     for instance_value, cc in enumerate(ccs):
         if one_instance_per_channel:
             current_instance = np.zeros_like(instances)
@@ -86,10 +83,6 @@ def affGraphToInstances(
                     instances[startstopslice][patch > kwargs['patch_threshold']] = instance_value + 1
                 except:
                     print(start, stop, idx, patch.shape)
-                # instances[startstopslice][patch > kwargs['patch_threshold']] = cnt
-                # cnt += 1
-                # if cnt == 256:
-                #     cnt = 1
 
             if kwargs['debug']:
                 debugstart = np.array(idx) * patchshape
@@ -128,9 +121,14 @@ def affGraphToInstances(
                debug_output1, debug_output2
     else:
         if kwargs.get("pad_with_ps", False):
-            instances = instances[rad[0]:instances.shape[0]-rad[0],
-                                  rad[1]:instances.shape[1]-rad[1],
-                                  rad[2]:instances.shape[2]-rad[2]]
+            if one_instance_per_channel:
+                inst_shape = instances.shape[1:]
+            else:
+                inst_shape = instances.shape
+            instances = instances[...,
+                                  rad[0]:inst_shape[0]-rad[0],
+                                  rad[1]:inst_shape[1]-rad[1],
+                                  rad[2]:inst_shape[2]-rad[2]]
             foreground = foreground[
                 rad[0]:foreground.shape[0]-rad[0],
                 rad[1]:foreground.shape[1]-rad[1],

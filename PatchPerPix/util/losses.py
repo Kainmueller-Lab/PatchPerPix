@@ -1,6 +1,9 @@
 import sys
 
-import tensorflow as tf
+try:
+    import tensorflow as tf
+except:
+    print("no tensorflow found! (losses.py, might be ok if torch is used)")
 
 
 def get_loss_fn(loss):

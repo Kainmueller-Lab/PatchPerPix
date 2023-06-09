@@ -359,7 +359,10 @@ def loadKernelFromFile(filename, affshape, patchshape, neighshape,
     psy = int(patchshape[1])
     psx = int(patchshape[2])
     th = patch_threshold
-    thi = 1.0 - th
+    if th < 0.5:
+        thi = th
+    else:
+        thi = 1.0 - th
 
     code = code.replace("{", "{{").replace("}", "}}") \
         .replace("DATAZSIZE", "{datazsize}") \

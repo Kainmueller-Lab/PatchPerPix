@@ -413,8 +413,7 @@ def blockwise_vote_instances(
     # chunksize = kwargs['chunksize']
     chunksize = np.minimum(kwargs['chunksize'], shape)
     margin = list(np.array(patchshape) // 2)
-    # overlap = np.array(kwargs.get('overlap', patchshape))
-    overlap = np.array([0, 0, 5])
+    overlap = np.array(kwargs.get('overlap', patchshape))
     in_offset = offset[1:] + np.array(bb_offset)
     logger.info('start new block: %s (with bb_offset)', in_offset)
     if patchshape[0] == 1:

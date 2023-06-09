@@ -21,6 +21,7 @@ def selectGPU(quantity=1):
             n = lns[idx+1]
             if "GPU" in n and "PID" in n:
                 gid_slot = n.split().index("GPU")
+                name_slot = n.split().index("Process")
                 start_found = False
                 for idx in range(idx+2, len(lns)):
                     if"|==========" in lns[idx]:
@@ -33,7 +34,9 @@ def selectGPU(quantity=1):
                     gid = lns[idx].split()[gid_slot]
                     if gid == "No":
                         break
-                    gpuInUse.append(int(gid))
+                    name = lns[idx].split()[name_slot]
+                    if "Xorg" not in name:
+                        gpuInUse.append(int(gid))
 
     # find free GPU
     selectedGPU = []

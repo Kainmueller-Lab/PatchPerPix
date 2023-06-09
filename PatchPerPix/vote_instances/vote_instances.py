@@ -234,6 +234,14 @@ def to_instance_seg(
         if kwargs.get('return_intermediates', False):
             return None, None
         else:
+            if kwargs.get("pad_with_ps", False):
+                instances = instances[rad[0]:instances.shape[0]-rad[0],
+                                      rad[1]:instances.shape[1]-rad[1],
+                                      rad[2]:instances.shape[2]-rad[2]]
+                foreground = foreground[
+                    rad[0]:foreground.shape[0]-rad[0],
+                    rad[1]:foreground.shape[1]-rad[1],
+                    rad[2]:foreground.shape[2]-rad[2]]
             return instances.astype(np.uint16), foreground.astype(np.uint8)
 
     # [patchshape[0],2*patchshape[1],2*patchshape[2]]
@@ -524,7 +532,7 @@ def do_all(
         results = [instances, foreground]
         result_names = [res_key, 'vote_foreground']
 
-    if kwargs.get('crop_to_foreground', False):
+    if kwargs.get('crop_to_foreground', True):
         if kwargs.get('one_instance_per_channel', False):
             for i in range(instances.shape[0]):
                 instances[i][foreground == 0] = 0

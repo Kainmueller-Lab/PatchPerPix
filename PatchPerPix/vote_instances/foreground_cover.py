@@ -35,7 +35,8 @@ def computeForegroundCover(
     if kwargs['select_patches_for_sparse_data']:
         pixThs = [0]
     else:
-        pixThs = [500, 100, 50, 10, 0]
+        mid = int(np.prod(patchshape) / 2)
+        pixThs = [t for t in [500, 100, 50, 10, 0] if t < mid]
     for pixTh in pixThs:
         if not silent:
             logger.info("compute foreground cover, threshold %s", pixTh)
@@ -221,9 +222,9 @@ def thinOutForegroundCover(
                 2*np.sum(patchshape), p=2)
             for i in pts:
                 selected_patch_foregrounds[i] = \
-                    selected_patch_foregrounds[i] - best_fg
+                    set(selected_patch_foregrounds[i]) - set(best_fg)
         else:
-            selected_patch_foregrounds = [s - best_fg
+            selected_patch_foregrounds = [set(s) - set(best_fg)
                                           for s in selected_patch_foregrounds]
         logger.info(
             "thin out foreground cover: %s covered, "

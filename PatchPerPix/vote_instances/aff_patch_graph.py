@@ -134,10 +134,11 @@ def computePatchGraph_cuda(pred_affs, consensus_vote_array,
 
     kernel = kernels.get_function("computePatchGraph")
 
-    if kwargs.get("num_parallel_samples", 1) == 1:
+    if kwargs.get("num_parallel_samples", 1) == 1 and \
+       kwargs.get("num_parallel_blocks", 1) == 1:
         # cuda scheduler seems to be having problem with many dense patches
         # split manually, might be slower for small number of or sparse patches
-        bs = 1024
+        bs = 512
         num_blocks = int(np.ceil(num_pairs / bs))
         logger.info('num blocks: %s', num_blocks)
         for i in range(num_blocks):

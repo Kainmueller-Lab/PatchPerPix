@@ -745,48 +745,24 @@ def main(pred_file, result_folder='.', **kwargs):
     # get bounding box for foreground
     if kwargs.get('only_bb'):
         mid = np.prod(kwargs['patchshape']) // 2
-        if cleaned_mask_key in in_f:
-            pred_keys.append(cleaned_mask_key)
-            channel_order.append(slice(0, 1))
-            shape = np.array(in_f[cleaned_mask_key].attrs['fg_shape'])
-            bb_offset = np.array(in_f[cleaned_mask_key].attrs['offset'])
-        else:
-            mask, key = loadFg(in_f, **kwargs)
-            # pred_keys["mask"] = key
-            mask = np.squeeze(mask)
-            if np.count_nonzero(mask) == 0:
-                logger.info('Volume has no foreground voxel, returning...')
-                return
-            # remove small components
-            if kwargs.get('ignore_small_comps', 0) > 0:
-                mask = clean_mask(mask, np.ones([3] * mask.ndim),
-                                  kwargs.get('ignore_small_comps'))
-                mask = mask.astype(np.uint8)
-            # skeletonize mask (flylight specific)
-            if kwargs.get('skeletonize_foreground'):
-                mask = skeletonize_3d(mask) > 0
-                mask = mask.astype(np.uint8)
-            # save processed mask to input file
-            if kwargs.get('ignore_small_comps', 0) > 0 or kwargs.get(
-                'skeletonize_foreground'):
-                in_f.create_dataset(
-                    cleaned_mask_key,
-                    data=np.reshape(mask, (1,) + mask.shape),
-                    shape=(1,) + mask.shape,
-                    compressor=compressor,
-                    dtype=np.uint8,
-                    overwrite=True
-                )
-            min = np.min(np.transpose(np.nonzero(mask)), axis=0)
-            max = np.max(np.transpose(np.nonzero(mask)), axis=0)
-            shape = max - min + 1
-            bb_offset = min
-            if kwargs.get('ignore_small_comps', 0) > 0 or kwargs.get(
-                'skeletonize_foreground'):
-                in_f[cleaned_mask_key].attrs['offset'] = [int(off)
-                                                          for off in bb_offset]
-                in_f[cleaned_mask_key].attrs['fg_shape'] = [int(dim)
-                                                            for dim in shape]
+        mask, key = loadFg(in_f, **kwargs)
+        mask = np.squeeze(mask)
+        if np.count_nonzero(mask) == 0:
+            logger.info('Volume has no foreground voxel, returning...')
+            return
+        # remove small components
+        if kwargs.get('ignore_small_comps', 0) > 0:
+            mask = clean_mask(mask, np.ones([3] * mask.ndim),
+                              kwargs.get('ignore_small_comps'))
+            mask = mask.astype(np.uint8)
+        # skeletonize mask (flylight specific)
+        if kwargs.get('skeletonize_foreground'):
+            mask = skeletonize_3d(mask) > 0
+            mask = mask.astype(np.uint8)
+        min = np.min(np.transpose(np.nonzero(mask)), axis=0)
+        max = np.max(np.transpose(np.nonzero(mask)), axis=0)
+        shape = max - min + 1
+        bb_offset = min
     else:
         shape = input_shape
         bb_offset = [0] * len(shape)
@@ -809,32 +785,33 @@ def main(pred_file, result_folder='.', **kwargs):
         global mutex
         mutex = l
 
-    mutex = Lock()
-    if kwargs['num_parallel_blocks'] > 1:
-        pool = Pool(
-            processes=kwargs['num_parallel_blocks'],
-            initializer=init,
-            initargs=(mutex,)
-            )
-        pool.map(functools.partial(
-            blockwise_vote_instances,
-            pred_file, pred_keys, result_file, tmp_key,
-            shape, channel_order, bb_offset,
-            kwargs),
-                 offsets)
-        pool.close()
-        pool.join()
-    else:
-        kwargs['mutex'] = mutex
-        for idx, offset in enumerate(offsets):
-            logger.info("start block idx: %s/%s (file %s)",
-                        idx, len(offsets), sample)
-            t0 = datetime.now()
-            blockwise_vote_instances(pred_file, pred_keys, result_file, tmp_key,
-                                     shape, channel_order, bb_offset, kwargs,
-                                     offset)
-            logger.info('time %s: %s', "blockwise_vote_instances",
-                        str(datetime.now() - t0))
+    if not kwargs.get("graphToInst", False):
+        mutex = Lock()
+        if kwargs['num_parallel_blocks'] > 1:
+            pool = Pool(
+                processes=kwargs['num_parallel_blocks'],
+                initializer=init,
+                initargs=(mutex,)
+                )
+            pool.map(functools.partial(
+                blockwise_vote_instances,
+                pred_file, pred_keys, result_file, tmp_key,
+                shape, channel_order, bb_offset,
+                kwargs),
+                     offsets)
+            pool.close()
+            pool.join()
+        else:
+            kwargs['mutex'] = mutex
+            for idx, offset in enumerate(offsets):
+                logger.info("start block idx: %s/%s (file %s)",
+                            idx, len(offsets), sample)
+                t0 = datetime.now()
+                blockwise_vote_instances(pred_file, pred_keys, result_file, tmp_key,
+                                         shape, channel_order, bb_offset, kwargs,
+                                         offset)
+                logger.info('time %s: %s', "blockwise_vote_instances",
+                            str(datetime.now() - t0))
 
     # stitch blocks
     #child_pid = os.fork()

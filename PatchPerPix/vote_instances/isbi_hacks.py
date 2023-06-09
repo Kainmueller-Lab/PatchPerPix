@@ -46,3 +46,4 @@ def filterInstanceBoundariesFromFG(labels,
     foreground_to_cover = np.logical_and(
         foreground_to_cover,
         boundary_count < 0.33 * np.product(patchshape[1:]))
+    return foreground_to_cover
