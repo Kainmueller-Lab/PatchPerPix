@@ -1,9 +1,8 @@
 # PatchPerPix for Instance Segmentation
 
-PDF: [PatchPerPix for Instance Segmentation](https://arxiv.org/abs/2001.07626)
+This repository is the official implementation of [PatchPerPix for Instance Segmentation](https://arxiv.org/abs/2001.07626).
 
-
-**Lisa Mais<sup>1</sup>, Peter Hirsch<sup>1</sup>, Dagmar Kainmueller**, ECCV2020</br>
+ **Lisa Mais<sup>1</sup>, Peter Hirsch<sup>1</sup>, Dagmar Kainmueller**, ECCV2020</br>
 <sup>1</sup>Authors contributed equally, listed in random order</br>
 
 ![PatchPerPix for Instance Segmentation](./README.assets/pipeline.png "PatchPerPix")
@@ -13,15 +12,14 @@ We present a novel method for proposal free instance segmentation that can handl
 
 ## Installation
 
-This package requires Python 3 and PyTorch. It contains the core code for the neural network model and our instance segmentation method.
+This package requires Python 3 and PyTorch.
 
 **Note**
 Previous versions (e.g., for the experiments published in our ECCV 2020 paper) require TensorFlow 1.x.
 If you want to run older experiments please checkout the respective tag: [eccv2020](https://github.com/Kainmueller-Lab/PatchPerPix/tree/ea4e2d4)
 If you have any questions, please open an issue (and mention that you're running the older code)
 
-### Core
-The recommended way is to install the package into your conda/python virtual environment. We recommend to use conda to install tensorflow.
+The recommended way is to install the package into your conda/python virtual environment. We recommend to use conda to install torch.
 
 ```
 conda create --name ppp
@@ -32,7 +30,17 @@ cd PatchPerPix
 pip install -e .
 ```
 
-### Experiments
-Example scripts to train a network and run the method are in a separate repository:
-[PatchPerPix_experiments](https://github.com/Kainmueller-Lab/PatchPerPix_experiments).</br>
-Please continue there after finishing the installation.
+
+## Training
+
+
+## Evaluation
+
+
+## Results
+
+## Contributing
+
+If you would like to contribute, have encountered any issues or have any suggestions, please open an issue on this GitHub repository.
+
+All contributions  are welcome! The content in this repository is licensed under the MIT license.
