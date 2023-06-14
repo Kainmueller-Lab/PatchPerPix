@@ -1,0 +1,259 @@
+[general]
+logging = "INFO"
+debug = false
+overwrite = false
+
+[data]
+train_data = "/nrs/saalfeld/maisl/data/flylight/flylight_complete/train"
+val_data = "/nrs/saalfeld/maisl/data/flylight/flylight_complete/fold1"
+test_data = "/nrs/saalfeld/maisl/data/flylight/flylight_complete/fold2"
+overlap_csv_folder = "/nrs/saalfeld/maisl/data/flylight/flylight_complete/close_to_overlap_points"
+fg_csv_folder = "/nrs/saalfeld/maisl/data/flylight/flylight_complete/fg_points"
+voxel_size = [ 1, 1, 1,]
+input_format = "zarr"
+num_channels = 3
+gt_key = "volumes/gt_instances_rm_5"
+raw_key = "volumes/raw_normalized"
+validate_on_train = false
+shift_intensity = false
+add_partly = true
+sample_fg_points = true
+cross_val_folders = ["val_data", "test_data"]
+
+[model]
+train_net_name = "train_net"
+test_net_name = "test_net"
+train_input_shape_valid = [ 140, 140, 140,]
+test_input_shape_valid = [ 156, 156, 156,]
+train_input_shape_same = [ 104, 104, 104,]
+test_input_shape_same = [ 104, 104, 104,]
+# train_input_shape_same = [64, 64, 64]
+# test_input_shape_same = [64, 64, 64]
+#test_input_shape_valid = [156, 156, 156]
+patchshape = [ 7, 7, 7,]
+# patchshape = [ 9, 9, 9,]
+patchstride = [ 1, 1, 1,]
+max_num_inst = 2
+fmap_inc_factors = [ 3, 3, 3,]
+# fmap_inc_factors = [ 2.8, 2.8, 2.8,]
+fmap_dec_factors = [ 1.2, 1.2, 1.2,]
+# fmap_dec_factors = [ 1.5, 1.5, 1.5,]
+downsample_factors = [ [ 2, 2, 2,], [ 2, 2, 2,], [ 2, 2, 2,],]
+activation = "relu"
+val_padding = "valid"
+train_padding = "valid"
+kernel_size = 3
+num_repetitions = 2
+upsampling = "trans_conv"
+overlapping_inst = true
+train_code = true
+patch_activation = "sigmoid"
+code_units = 176
+# code_units = 378
+autoencoder_chkpt = "this"
+network_style = "unet"
+num_fmaps = 20
+# num_fmaps = 30
+# network_style = "SwinUNETR"
+# num_fmaps = 24
+decode_batch_size = 1024
+
+[model.autoencoder]
+train_net_name = "train_net"
+test_net_name = "test_net"
+# train_input_shape = [ 9, 9, 9,]
+# test_input_shape = [ 9, 9, 9,]
+# patchshape = [ 9, 9, 9,]
+train_input_shape = [ 7, 7, 7,]
+test_input_shape = [ 7, 7, 7,]
+patchshape = [ 7, 7, 7,]
+patchstride = [ 1, 1, 1,]
+network_type = "conv"
+activation = "relu"
+num_fmaps = [ 64, 128,]
+downsample_factors = [ [ 2, 2, 2,], [ 2, 2, 2],]
+upsampling = "resize_conv"
+kernel_size = 3
+num_repetitions = 2
+padding = "same"
+code_method = "conv1x1_b"
+code_activation = "sigmoid"
+code_fmaps = 22
+# code_fmaps = 14
+regularizer = "l2"
+regularizer_weight = 0.0001
+num_code_samples = 1024
+
+[preprocessing]
+clipmax = 1500
+
+[training]
+val_log_step = 25
+len_epoch = 100
+batch_size = 2
+num_gpus = 1
+num_workers = 4
+# lower cache size if torch_add_affinities is used, size barely matters, 5
+cache_size = 40
+max_iterations = 400002
+checkpoints = 5000
+snapshots = 10000
+profiling = 1000
+probability_hue = 0.3
+hue_max_change = 0.5
+probability_permute = 0.5
+# reject_min_masked = 0.009
+use_auto_mixed_precision = true
+# "cpu" (with gunpowder), "torch" (on gpu with gunpowder) "loss" (in loss)
+add_affinities = "loss"
+mask_bg_weight = 0.01
+use_gt_extra = true
+init_ssl = false
+oversample_complete = 3
+
+
+[prediction]
+output_format = "zarr"
+num_workers = 5
+cache_size = 40
+aff_key = "volumes/pred_affs"
+code_key = "volumes/pred_code"
+# fg_key = "volumes/pred_fg"
+numinst_key = "volumes/pred_numinst"
+mask_folder = "/nrs/saalfeld/maisl/ppp/setup16_191206/test/processed/400000"
+clean_mask = 600
+fg_thresh = 0.5
+overlap = [ 5, 5, 5,]
+
+[validation]
+params_product = [ "mws", "skeletonize_foreground", "numinst_threshs", ]
+params_zip = ["patch_threshold", "fc_threshold",]
+mws = [ false,]
+skeletonize_foreground = [ true,]
+patch_threshold = [ 0.5,]
+fc_threshold = [ 0.5,]
+# patch_threshold = [ 0.5, 0.8,]
+# fc_threshold = [ 0.5, 0.8,]
+# numinst_threshs = [ [0.9, 0.1], [0.334, 0.334],]
+numinst_threshs = [ [0.9, 0.1],]
+checkpoints = [ 100000,]
+
+[testing]
+num_workers = 5
+
+[vote_instances]
+patch_threshold = 0.5
+fc_threshold = 0.5
+cuda = true
+blockwise = true
+only_bb = true
+ignore_small_comps = 200
+num_parallel_samples = 1
+num_parallel_blocks = 1
+num_workers = 8
+chunksize = [ 92, 92, 92,]
+sampling = 1.0
+debug = false
+select_patches_for_sparse_data = true
+save_no_intermediates = true
+output_format = "hdf"
+includeSinglePatchCCS = true
+one_instance_per_channel = false
+sample = 1.0
+removeIntersection = true
+mws = true
+isbiHack = false
+mask_fg_border = false
+graphToInst = false
+skipLookup = false
+skipConsensus = false
+skipRanking = false
+skipThinCover = false
+affinity_graph_voting = false
+affinity_graph_voting_selected = false
+termAfterThinCover = false
+add_suffix = false
+consensus_without_overlap = false
+pad_with_ps = false
+fg_thresh_vi = -1.0
+consensus_interleaved_cnt = false
+consensus_norm_prob_product = true
+consensus_prob_product = true
+consensus_norm_aff = true
+vi_bg_use_inv_th = false
+vi_bg_use_half_th = false
+vi_bg_use_less_than_th = true
+rank_norm_patch_score = true
+rank_int_counter = false
+patch_graph_norm_aff = true
+blockwise_old_stitch_fn = false
+flip_cons_arr_axes = false
+use_score_oracle = false
+store_scores = false
+shuffle_patches = false
+return_intermediates = true
+remove_small_comps = 0
+do_nms = false
+skeletonize_foreground = true
+prob_based_consensus = false
+numinst_threshs = [ 0.9, 0.1,]
+
+[evaluation]
+num_workers = 5
+from_scratch = false
+res_key = "vote_instances"
+metric = "general.avg_f1_cov_score"
+localization_criterion = "cldice"
+assignment_strategy = "greedy"
+remove_small_components = 500
+keep_gt_shape = true
+evaluate_false_labels = true
+add_general_metrics = ["avg_gt_skel_coverage", "avg_f1_cov_score"]
+add_multi_thresh_metrics = ["avg_tp_skel_coverage"]
+average_over_samples = false
+summary = [ "general.Num GT", "general.Num Pred", "general.avg_f1_cov_score", "confusion_matrix.avFscore", "general.avg_gt_skel_coverage", "confusion_matrix.th_0_5.avg_tp_skel_coverage",
+"confusion_matrix.th_0_1.fscore", "confusion_matrix.th_0_2.fscore", "confusion_matrix.th_0_3.fscore", "confusion_matrix.th_0_4.fscore", "confusion_matrix.th_0_5.fscore", "confusion_matrix.th_0_6.fscore", "confusion_matrix.th_0_7.fscore", "confusion_matrix.th_0_8.fscore", "confusion_matrix.th_0_9.fscore",
+"confusion_matrix.th_0_5.AP_TP", "confusion_matrix.th_0_5.AP_FP",
+"confusion_matrix.th_0_5.AP_FN", "confusion_matrix.th_0_5.false_split",
+"confusion_matrix.th_0_5.false_merge"
+]
+
+[evaluation.prediction]
+eval_numinst_prediction = false
+max_numinst = 2
+eval_fg_prediction = false
+eval_patch_prediction = false
+
+
+[visualize]
+save_mip = true
+
+[optimizer.optimizer]
+optimizer = "Adam"
+lr = 0.0001
+
+[training.sampling]
+min_masked = 0.01
+probability_random = 0.05
+probability_fg = 0.75
+probability_overlap = 0.2
+point_balance_radius_overlap = 3
+
+[postprocessing.watershed]
+output_format = "hdf"
+
+[training.augmentation.intensity]
+scale = [ 0.9, 1.1,]
+shift = [ -0.1, 0.1,]
+
+[training.augmentation.simple]
+
+[training.augmentation.elastic]
+control_point_spacing = [ 20, 20, 20,]
+jitter_sigma = [ 1, 1, 1,]
+rotation_min = -45
+rotation_max = 45
+subsample = 4
+
+[training.augmentation.overlay]
+probability_overlay = 0.3
