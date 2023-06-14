@@ -19,14 +19,13 @@ from numcodecs import Blosc
 
 if __package__ is None or __package__ == '':
     from vote_instances import do_block
-    from PatchPerPix.util import zarr2hdf
     from PatchPerPix.util import remove_small_components, relabel, color
     from io_hdflike import IoZarr
     from vote_instances import affGraphToInstances
     from utilVoteInstances import loadFg, returnFg
 else:
     from .vote_instances import do_block
-    from ..util import zarr2hdf, remove_small_components, relabel, color
+    from ..util import remove_small_components, relabel, color
     from .io_hdflike import IoZarr
     from .graph_to_labeling import affGraphToInstances
     from .utilVoteInstances import loadFg, returnFg

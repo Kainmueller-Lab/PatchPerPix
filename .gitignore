@@ -9,5 +9,6 @@ snapshots
 *.index
 *.data
 *.json
-*.npy
-tmp
+*~
+error_log_*
+out_log_*
