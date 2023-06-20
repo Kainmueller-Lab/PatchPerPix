@@ -376,18 +376,24 @@ def setDebugValuesForConfig(config):
 @fork
 @time_func
 def mknet(args, config, train_folder, test_folder):
-    if args.run_from_exp:
-        mk_net_fn = runpy.run_path(
-            os.path.join(config['base'], 'mknet.py'))['mk_net']
-        mk_net_fn_train = mk_net_fn
-    else:
-        mk_net_fn = importlib.import_module(
-            args.app + '.setups.' + args.setup + '.mknet').mk_net
-        if args.batched:
-            mk_net_fn_train = importlib.import_module(
-                args.app + '.setups.' + args.setup + '.mknet_bs').mk_net
-        else:
+    try:
+        if args.run_from_exp:
+            mk_net_fn = runpy.run_path(
+                os.path.join(config['base'], 'mknet.py'))['mk_net']
             mk_net_fn_train = mk_net_fn
+        else:
+            mk_net_fn = importlib.import_module(
+                args.app + '.setups.' + args.setup + '.mknet').mk_net
+            if args.batched:
+                mk_net_fn_train = importlib.import_module(
+                    args.app + '.setups.' + args.setup + '.mknet_bs').mk_net
+            else:
+                mk_net_fn_train = mk_net_fn
+    except (ModuleNotFoundError, FileNotFoundError) as e:
+        if 'all' in args.do:
+            logger.info("mk_net not found, skipping (ok if torch or tensorflow2 is used)")
+        else:
+            raise e
 
     mk_net_fn_train(name=config['model']['train_net_name'],
                     input_shape=config['model']['train_input_shape'],
