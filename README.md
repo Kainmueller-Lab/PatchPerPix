@@ -19,15 +19,16 @@ Previous versions (e.g., for the experiments published in our ECCV 2020 paper) r
 If you want to run older experiments please checkout the respective tag: [eccv2020](https://github.com/Kainmueller-Lab/PatchPerPix/tree/ea4e2d4)
 If you have any questions, please open an issue (and mention that you're running the older code)
 
-The recommended way is to install the package into your conda/python virtual environment. We recommend to use conda to install torch.
+The recommended way is to install the package into your conda/python virtual environment. We recommend to use conda to install torch (tested with torch 1.13, but newer versions should work, too). The following instructions were tested on linux/ubuntu 20.04.
+
 
 ```
-conda create --name ppp
+conda create --name ppp --yes
 conda activate ppp
-conda install python=3.9 pytorch-cuda torchvision torchaudio cudatoolkit -c pytorch -c nvidia
+conda install python=3.9 pytorch-cuda torchvision torchaudio cudatoolkit -c pytorch -c nvidia --yes
 git clone https://github.com/Kainmueller-Lab/PatchPerPix.git
 cd PatchPerPix
-pip install -e .
+PATH=/usr/local/cuda/bin:$PATH CUDA_ROOT=/usr/local/cuda pip install -e .
 ```
 
 ## Organization

@@ -347,6 +347,9 @@ def gather_nd_torch_no_batch(params, indices):
 
 
 def seg_to_affgraph_3d_multi_torch_code_batch(seg, nhood, device, ps, psH, samples_loc, b):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, z, y, x)
@@ -389,6 +392,9 @@ def seg_to_affgraph_3d_multi_torch_code_batch(seg, nhood, device, ps, psH, sampl
 
 
 def seg_to_affgraph_2d_multi_torch_code_batch(seg, nhood, device, ps, psH, samples_loc, b):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, y, x)
@@ -430,6 +436,9 @@ def seg_to_affgraph_2d_multi_torch_code_batch(seg, nhood, device, ps, psH, sampl
 
 
 def seg_to_affgraph_3d_multi_torch_code(seg, nhood, device, ps, psH, samples_loc):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, z, y, x)
@@ -470,6 +479,9 @@ def seg_to_affgraph_3d_multi_torch_code(seg, nhood, device, ps, psH, samples_loc
 
 
 def seg_to_affgraph_2d_multi_torch_code(seg, nhood, device, ps, psH, samples_loc):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, y, x)
@@ -509,6 +521,9 @@ def seg_to_affgraph_2d_multi_torch_code(seg, nhood, device, ps, psH, samples_loc
 
 
 def seg_to_affgraph_3d_multi_torch(seg, nhood, device):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, z, y, x)
@@ -553,6 +568,9 @@ def seg_to_affgraph_3d_multi_torch(seg, nhood, device):
 
 
 def seg_to_affgraph_2d_multi_torch(seg, nhood, device):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, y, x)
@@ -593,6 +611,9 @@ def seg_to_affgraph_2d_multi_torch(seg, nhood, device):
 
 
 def seg_to_affgraph_2d_torch(seg, nhood, device):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, y, x)
@@ -631,6 +652,9 @@ def seg_to_affgraph_2d_torch(seg, nhood, device):
 
 
 def seg_to_affgraph_3d_torch(seg, nhood, device):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, z, y, x)
@@ -672,6 +696,9 @@ def seg_to_affgraph_3d_torch(seg, nhood, device):
 
 
 def seg_to_affgraph_3d_torch_code(seg, nhood, device, ps, psH, samples_loc):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, z, y, x)
@@ -709,6 +736,9 @@ def seg_to_affgraph_3d_torch_code(seg, nhood, device, ps, psH, samples_loc):
 
 
 def seg_to_affgraph_2d_torch_code(seg, nhood, device, ps, psH, samples_loc):
+    # based on:
+    # https://github.com/TuragaLab/malis/blob/572ef0420107eee3c721bdafb58775a8a0fc467a/malis/malis.pyx
+    # https://github.com/funkelab/gunpowder/blob/f202a6062dea65a4367a29816e8a2cc87d28b4b6/gunpowder/nodes/add_affinities.py
     # constructs an affinity graph from a segmentation
     # assume affinity graph is represented as:
     # shape = (e, y, x)
