@@ -26,7 +26,7 @@ setup(
             'tqdm',
             'zarr',
             'evaluate-instance-segmentation @ git+https://github.com/Kainmueller-Lab/evaluate-instance-segmentation.git@master#egg=evaluate-instance-segmentation',
-            'gunpowder @ git+https://github.com/Kainmueller-Lab/gunpowder.git@6babc4119d6ed6049b5b9def322dfd6c155579e7#egg=gunpowder',
+            'gunpowder @ git+https://github.com/Kainmueller-Lab/gunpowder.git@3f99f187af3f038dc1345b6728e3b9879b807081#egg=gunpowder',
             'neurolight @ git+https://github.com/maisli/neurolight.git@master#egg=neurolight',
             'funlib.learn.torch @ git+https://github.com/Kainmueller-Lab/funlib.learn.torch@ppp#egg=funlib.learn.torch',
         ],
